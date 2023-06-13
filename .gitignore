@@ -50,3 +50,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Ninja stuff
+.ninja_log
+
+# vscode stuff
+.vscode/
