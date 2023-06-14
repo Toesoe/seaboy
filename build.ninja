@@ -1,6 +1,31 @@
-cflags = -Wall -Werror -fanalyzer
+builddir = build
+srcdir = src
+cflags  = -Wall -Werror -Wextra -Wshadow -fanalyzer  -std=c2x
+ldflags = -g -lgcc -lm
 
 rule cc
-  command = gcc $cflags -c $in -o $out
+    command = gcc $cflags -c $in -o $out
+    description = CC $out
 
-build build/main.o: cc src/main.c
+rule link
+    command = gcc $ldflags -o $out $in
+    description = LINK $out
+
+build $builddir/main.o: cc $srcdir/main.c
+
+build $builddir/hw_cpu.o: cc $srcdir/hw/cpu.c
+build $builddir/hw_cpu_instr.o: cc $srcdir/hw/instr.c
+
+build $builddir/hw_cart.o: cc $srcdir/hw/cart.c
+build $builddir/hw_joypad.o: cc $srcdir/hw/joypad.c
+build $builddir/hw_ppu.o: cc $srcdir/hw/ppu.c
+build $builddir/hw_snd.o: cc $srcdir/hw/snd.c
+
+build $builddir/drv_audio.o: cc $srcdir/drv/audio.c
+build $builddir/drv_input.o: cc $srcdir/drv/input.c
+build $builddir/drv_render.o: cc $srcdir/drv/render.c
+
+build seaboy: link $builddir/main.o $builddir/hw_cpu.o $
+    $builddir/hw_cart.o $builddir/hw_joypad.o  $builddir/hw_ppu.o $
+    $builddir/hw_snd.o $builddir/drv_audio.o $builddir/drv_input.o $
+    $builddir/drv_render.o
