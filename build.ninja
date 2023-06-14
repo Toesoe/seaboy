@@ -25,7 +25,7 @@ build $builddir/drv_audio.o: cc $srcdir/drv/audio.c
 build $builddir/drv_input.o: cc $srcdir/drv/input.c
 build $builddir/drv_render.o: cc $srcdir/drv/render.c
 
-build seaboy: link $builddir/main.o $builddir/hw_cpu.o $
+build $builddir/seaboy: link $builddir/main.o $builddir/hw_cpu.o $
     $builddir/hw_cart.o $builddir/hw_joypad.o  $builddir/hw_ppu.o $
     $builddir/hw_snd.o $builddir/drv_audio.o $builddir/drv_input.o $
     $builddir/drv_render.o
