@@ -17,7 +17,7 @@
 
 typedef enum _Flag
 {
-    c = 4,
+    c = 12,
     h,
     n,
     z

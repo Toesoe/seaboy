@@ -36,7 +36,7 @@ void resetCpu(void)
  */
 void setFlag(Flag flag)
 {
-    cpu.af |= (1 << (flag + 8));
+    cpu.af |= (1 << flag);
 }
 
 /**
@@ -46,7 +46,7 @@ void setFlag(Flag flag)
  */
 void resetFlag(Flag flag)
 {
-    cpu.af &= ~(1 << (flag + 8));
+    cpu.af &= ~(1 << flag);
 }
 
 /**
