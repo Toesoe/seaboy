@@ -1,5 +1,5 @@
 /**
- * @file bus.h
+ * @file mem.h
  * @author Toesoe
  * @brief seaboy mem (ram, vram)
  * @version 0.1
@@ -9,8 +9,7 @@
  * 
  */
 
-#ifndef _MEM_H_
-#define _MEM_H_
+#include "mem.h"
 
 #include <stdint.h>
 
@@ -36,5 +35,3 @@ void write16(uint16_t val, uint16_t addr)
     wram[addr]     = (uint8_t)(val & 0xFF);
     wram[addr + 1] = (uint8_t)(val >> 8);
 }
-
-#endif // !_MEM_H_
