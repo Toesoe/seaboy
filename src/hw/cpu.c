@@ -42,7 +42,7 @@ void setFlag(Flag flag)
 /**
  * @brief reset a specific flag
  * 
- * @param flag flag_t type to set
+ * @param flag flag_t type to reset
  */
 void resetFlag(Flag flag)
 {

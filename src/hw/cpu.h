@@ -17,10 +17,10 @@
 
 typedef enum _Flag
 {
-    c = 12,
-    h,
-    n,
-    z
+    FLAG_C = 12,
+    FLAG_H,
+    FLAG_N,
+    FLAG_Z
 } Flag;
 
 typedef enum _Register16
@@ -28,7 +28,9 @@ typedef enum _Register16
     AF = 0,
     BC,
     DE,
-    HL
+    HL,
+    SP,
+    PC
 } Register16;
 
 typedef enum _Register8
@@ -44,12 +46,12 @@ typedef enum _Register8
 
 typedef struct
 {
-    uint16_t  af;
-    uint16_t  bc;
-    uint16_t  de;
-    uint16_t  hl;
-    uint16_t  sp;
-    uint16_t  pc;
+    uint16_t af;
+    uint16_t bc;
+    uint16_t de;
+    uint16_t hl;
+    uint16_t sp;
+    uint16_t pc;
 } cpu_t;
 
 // functions
