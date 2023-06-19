@@ -17,10 +17,10 @@
 
 typedef enum _Flag
 {
-    FLAG_C = 4,
-    FLAG_H,
-    FLAG_N,
-    FLAG_Z
+    FLAG_C = 4, // carry
+    FLAG_H,     // half-carry
+    FLAG_N,     // subtract flag (BCD)
+    FLAG_Z      // zero flag
 } Flag;
 
 typedef enum _Register16
@@ -87,6 +87,11 @@ void setFlag(Flag);
  * @brief reset a specific flag
  */
 void resetFlag(Flag);
+
+/**
+ * @brief check if a flag is set
+ */
+bool testFlag(Flag);
 
 /**
  * @brief step the program counter

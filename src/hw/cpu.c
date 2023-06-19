@@ -32,7 +32,7 @@ void resetCpu(void)
 /**
  * @brief set a specific flag
  * 
- * @param flag flag_t type to set
+ * @param flag flag to set
  */
 void setFlag(Flag flag)
 {
@@ -42,11 +42,23 @@ void setFlag(Flag flag)
 /**
  * @brief reset a specific flag
  * 
- * @param flag flag_t type to reset
+ * @param flag flag to reset
  */
 void resetFlag(Flag flag)
 {
     cpu.reg8.f &= ~(1 << flag);
+}
+
+/**
+ * @brief check if a flag is set
+ * 
+ * @param flag flag to check
+ * @return true if set
+ * @return false if unset
+ */
+bool testFlag(Flag flag)
+{
+    return cpu.reg8.f & (1 << flag);
 }
 
 /**
