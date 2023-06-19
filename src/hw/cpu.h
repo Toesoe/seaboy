@@ -69,7 +69,7 @@ typedef union packed
         uint32_t _nouse_sp_pc;
     } reg8;
     uint16_t reg16_arr[6];
-    uint8_t reg8_arr[8];
+    uint8_t reg8_arr[12];
 } cpu_t;
 
 // functions
