@@ -36,7 +36,7 @@ void resetCpu(void)
  */
 void setFlag(Flag flag)
 {
-    cpu.af |= (1 << flag);
+    cpu.reg8.f |= (1 << flag);
 }
 
 /**
@@ -46,7 +46,7 @@ void setFlag(Flag flag)
  */
 void resetFlag(Flag flag)
 {
-    cpu.af &= ~(1 << flag);
+    cpu.reg8.f &= ~(1 << flag);
 }
 
 /**
@@ -57,7 +57,7 @@ void resetFlag(Flag flag)
  */
 void stepCpu(bool is16)
 {
-    cpu.pc += 1 + is16;
+    cpu.reg16.pc += 1 + is16;
 }
 
 /**
@@ -67,7 +67,7 @@ void stepCpu(bool is16)
  */
 void jumpCpu(uint16_t addr)
 {
-    cpu.pc = addr;
+    cpu.reg16.sp = addr;
 }
 
 /**
@@ -86,7 +86,7 @@ const cpu_t *getCpuObject(void)
  */
 void setRegister16(Register16 reg, uint16_t value)
 {
-    memcpy(&cpu + (reg * sizeof(uint16_t)), &value, sizeof(uint16_t));
+    cpu.reg16_arr[reg] = value;
 }
 
 /**
@@ -97,7 +97,7 @@ void setRegister16(Register16 reg, uint16_t value)
  */
 void setRegister8(Register8 reg, uint8_t value)
 {
-    memcpy(&cpu + (reg * sizeof(uint8_t)), &value, sizeof(uint8_t));
+    cpu.reg8_arr[reg] = value;
 }
 
 /**
