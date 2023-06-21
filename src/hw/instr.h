@@ -86,3 +86,206 @@ void ldh_offset_mem_a(uint8_t);
  * 
  */
 void ldh_a_offset_mem(uint8_t);
+
+/**
+ * @brief load a 16-bit register with an immediate value
+ * 
+ */
+void ld_reg16_imm(Register16, uint16_t);
+
+/**
+ * @brief set HL register to SP + an offfset
+ * 
+ */
+void ldhl_sp_offset(uint8_t);
+
+/**
+ * @brief push a specific register onto the stack
+ * 
+ */
+void push_reg16(Register16);
+
+/**
+ * @brief pop a specific register from the stack
+ * 
+ */
+void pop_reg16(Register16);
+
+void add8_a_n(uint8_t);
+void adc8_a_n(uint8_t);
+void sub8_n_a(uint8_t);
+void sbc8_a_n(uint8_t);
+void and8_a_n(uint8_t);
+void or8_a_n(uint8_t);
+void xor8_a_n(uint8_t);
+void cp8_a_n(uint8_t);
+void inc8_reg(Register8);
+void dec8_reg(Register8);
+
+void add16_hl_n(uint16_t);
+void add16_sp_n(uint16_t);
+void inc16_reg(Register16);
+void dec16_reg(Register16);
+
+/**
+ * @brief swap low & high nibble of a register
+ */
+void swap8_n(Register8);
+
+/**
+ * @brief swap low & high nibble of a memory value
+ * 
+ */
+void swap8_addr(uint16_t);
+
+/**
+ * @brief decimal adjust A register (bcd conversion)
+ * 
+ */
+void daa(void);
+
+/**
+ * @brief complement A register (flip all bits)
+ * 
+ */
+void cpl(void);
+
+/**
+ * @brief complement carry flag (invert)
+ * 
+ */
+void ccf(void);
+
+/**
+ * @brief set carry flag
+ * 
+ */
+void scf(void);
+
+/**
+ * @brief rotate left carry, register a
+ * 
+ */
+void rlca(void);
+
+/**
+ * @brief rotate left, register a
+ * 
+ */
+void rla(void);
+
+/**
+ * @brief rotate right carry, register a
+ * 
+ */
+void rrca(void);
+
+/**
+ * @brief rotate right, register a
+ * 
+ */
+void rra(void);
+
+/**
+ * @brief rotate left carry, 8 bit register
+ * 
+ */
+void rlc_reg(Register8);
+
+/**
+ * @brief rotate left carry, memory value
+ * 
+ */
+void rlc_addr(uint16_t);
+
+/**
+ * @brief rotate left, 8 bit register
+ * 
+ */
+void rl_reg(Register8);
+
+/**
+ * @brief rotate lefft, memory value
+ * 
+ */
+void rl_addr(uint16_t);
+
+/**
+ * @brief rotate right carry, 8 bit register
+ * 
+ */
+void rrc_reg(Register8);
+
+/**
+ * @brief rotate right carry, memory value
+ * 
+ */
+void rrc_addr(uint16_t);
+
+/**
+ * @brief rotate right, 8 bit register
+ * 
+ */
+void rr_reg(Register8);
+
+/**
+ * @brief rotate right, memory value
+ * 
+ */
+void rr_addr(uint16_t);
+
+/**
+ * @brief shift left carry, 8 bit register, LSB 0
+ * 
+ */
+void sla_reg(Register8);
+
+/**
+ * @brief shift left carry, memory value, LSB 0
+ * 
+ */
+void sla_addr(uint16_t);
+
+/**
+ * @brief shift right carry, 8 bit register, MSB keep
+ * 
+ */
+void sra_reg(Register8);
+
+/**
+ * @brief shift right carry, memory value, MSB keep
+ * 
+ */
+void sra_addr(uint16_t);
+
+/**
+ * @brief shift right carry, 8 bit register, MSB 0
+ * 
+ */
+void srl_reg(Register8);
+
+/**
+ * @brief shift right carry, memory value, MSB 0
+ * 
+ */
+void srl_addr(uint16_t);
+
+void bit_n_reg(uint8_t, Register8);
+void bit_n_addr(uint8_t, uint16_t);
+void set_n_reg(uint8_t, Register8);
+void set_n_addr(uint8_t, uint16_t);
+void reset_n_reg(uint8_t, Register8);
+void reset_n_addr(uint8_t, uint16_t);
+
+void jmp_nn(uint16_t);
+void jmp_nn_cond(uint16_t, Flag, bool);
+void jmp_hl(void);
+void jr_n(int8_t);
+void jr_n_cond(int8_t, Flag, bool);
+
+void call_nn(uint16_t);
+void call_nn_cond(uint16_t, Flag, bool);
+void rst_n(uint8_t);
+void ret(void);
+void ret_cond(Flag, bool);
+void reti(void);

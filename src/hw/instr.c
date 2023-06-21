@@ -263,9 +263,15 @@ void dec16_reg(Register16 reg)
 
 // misc
 
-uint8_t swap8_n(uint8_t val)
+void swap8_n(Register8 reg)
 {
-    return ((val & 0x0F) << 4) | ((val & 0xF0) >> 4);
+    setRegister8(reg, ((pCpu->reg8_arr[reg] & 0x0F) << 4) | ((pCpu->reg8_arr[reg] & 0xF0) >> 4));
+}
+
+void swap8_addr(uint16_t addr)
+{
+    uint8_t val = fetch8(addr);
+    write8(((val & 0x0F) << 4) | ((val & 0xF0) >> 4), addr);
 }
 
 /**
@@ -511,7 +517,7 @@ void sra_addr(uint16_t addr)
     write8(fetch8(addr) >> 1, addr);
 }
 
-void sla_reg(Register8 reg)
+void srl_reg(Register8 reg)
 {
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
@@ -521,7 +527,7 @@ void sla_reg(Register8 reg)
     setRegister8(reg, (pCpu->reg8_arr[reg] >> 1) | (pCpu->reg8_arr[reg] & 0x80));
 }
 
-void sla_addr(uint16_t addr)
+void srl_addr(uint16_t addr)
 {
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
