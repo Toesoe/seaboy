@@ -8,8 +8,8 @@
  * @copyright Copyright (c) 2023
  * 
  */
+#include "instr.h"
 
-#include "cpu.h"
 #include "mem.h"
 
 static cpu_t *pCpu;
@@ -20,7 +20,7 @@ static cpu_t *pCpu;
 #define CHECK_HALF_CARRY_ADD16(a, b) ((((a & 0xfff) + (b & 0xfff)) & 0x1000) == 0x1000)
 #define CHECK_HALF_CARRY_SUB16(a, b) ((((a & 0xfff) - (b & 0xfff)) & 0x1000) == 0x1000)
 
-void getCpuPtr(const cpu_t *pCpuSet)
+void setCpuPtr(const cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
 }
@@ -54,22 +54,22 @@ void ld_addr_imm(uint16_t addr, uint8_t val)
     write8(val, addr);
 }
 
-void ldd_a_hl()
+void ldd_a_hl(void)
 {
     setRegister8(A, fetch8(pCpu->reg16.hl--));
 }
 
-void ldd_hl_a()
+void ldd_hl_a(void)
 {
     write8(pCpu->reg8.a, pCpu->reg16.hl--);
 }
 
-void ldi_a_hl()
+void ldi_a_hl(void)
 {
     setRegister8(A, fetch8(pCpu->reg16.hl++));
 }
 
-void ldi_hl_a()
+void ldi_hl_a(void)
 {
     write8(pCpu->reg8.a, pCpu->reg16.hl++);
 }
