@@ -37,7 +37,7 @@ typedef enum _Register8
 {
     A = 0,
     F,
-    B
+    B,
     C,
     D,
     E,

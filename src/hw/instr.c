@@ -498,7 +498,7 @@ void sra_reg(Register8 reg)
 
     if (pCpu->reg8_arr[reg] & 0x01) { setFlag(FLAG_C); }
 
-    setRegister8(reg, pCpu->reg8_arr[reg] >> 1);
+    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1) | (pCpu->reg8_arr[reg] & 0x80));
 }
 
 void sra_addr(uint16_t addr)
@@ -509,4 +509,190 @@ void sra_addr(uint16_t addr)
     if (fetch8(addr) & 0x01) { setFlag(FLAG_C); }
 
     write8(fetch8(addr) >> 1, addr);
+}
+
+void sla_reg(Register8 reg)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (pCpu->reg8_arr[reg] & 0x01) { setFlag(FLAG_C); }
+
+    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1) | (pCpu->reg8_arr[reg] & 0x80));
+}
+
+void sla_addr(uint16_t addr)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (fetch8(addr) & 0x01) { setFlag(FLAG_C); }
+
+    write8(fetch8(addr) >> 1, addr);
+}
+
+// single bit stuff
+
+void bit_n_reg(uint8_t bit, Register8 reg)
+{
+    resetFlag(FLAG_N);
+    setFlag(FLAG_H);
+
+    // Z set if bit set
+    pCpu->reg8_arr[reg] & (1 << bit) ? resetFlag(FLAG_Z) : setFlag(FLAG_Z);
+}
+
+void bit_n_addr(uint8_t bit, uint16_t addr)
+{
+    resetFlag(FLAG_N);
+    setFlag(FLAG_H);
+
+    // Z set if bit set
+    fetch8(addr) & (1 << bit) ? resetFlag(FLAG_Z) : setFlag(FLAG_Z);
+}
+
+void set_n_reg(uint8_t bit, Register8 reg)
+{
+    pCpu->reg8_arr[reg] |= (1 << bit);
+}
+
+void set_n_addr(uint8_t bit, uint16_t addr)
+{
+    write8(fetch8(addr) | (1 << bit), addr);
+}
+
+void reset_n_reg(uint8_t bit, Register8 reg)
+{
+    pCpu->reg8_arr[reg] &= ~(1 << bit);
+}
+
+void reset_n_addr(uint8_t bit, uint16_t addr)
+{
+    write8(fetch8(addr) & ~(1 << bit), addr);
+}
+
+// jumps
+
+void jmp_nn(uint16_t addr)
+{
+    setRegister16(PC, addr);
+}
+
+/**
+ * @brief perform conditional jump
+ * 
+ * @param addr addr to jump to
+ * @param flag flag to test
+ * @param testSet if true, will execute jump if specified flag is set
+ */
+void jmp_nn_cond(uint16_t addr, Flag flag, bool testSet)
+{
+    if (testFlag(flag))
+    {
+        if (testSet) { jmp_nn(addr); }
+    }
+    else
+    {
+        if (!testSet) { jmp_nn(addr); }
+    }
+}
+
+void jmp_hl(void)
+{
+    setRegister16(PC, pCpu->reg16.hl);
+}
+
+void jr_n(int8_t val)
+{
+    setRegister16(PC, pCpu->reg16.pc + val);
+}
+
+void jr_n_cond(int8_t val, Flag flag, bool testSet)
+{
+    if (testFlag(flag))
+    {
+        if (testSet) { jr_n(val); }
+    }
+    else
+    {
+        if (!testSet) { jr_n(val); }
+    }
+}
+
+// calls
+
+void call_nn(uint16_t val)
+{
+    write16(pCpu->reg16.pc + 2, pCpu->reg16.sp);
+    pCpu->reg16.sp -= 2;
+    setRegister16(PC, val);
+}
+
+void call_nn_cond(uint16_t val, Flag flag, bool testSet)
+{
+    if (testFlag(flag))
+    {
+        if (testSet) 
+        {
+            call_nn(val);
+        }
+    }
+    else
+    {
+        if (!testSet) 
+        {
+            call_nn(val);
+        }
+    }
+}
+
+void rst_n(uint8_t val)
+{
+    switch(val)
+    {
+        case 0x00:
+        case 0x08:
+        case 0x10:
+        case 0x18:
+        case 0x20:
+        case 0x28:
+        case 0x30:
+        case 0x38:
+            write16(pCpu->reg16.pc, pCpu->reg16.sp);
+            pCpu->reg16.sp -= 2;
+            setRegister16(PC, val);
+            break;
+        default:
+            while(true) {} // hang for now
+    }
+}
+
+void ret(void)
+{
+    setRegister16(PC, fetch16(pCpu->reg16.sp));
+    pCpu->reg16.sp += 2;
+}
+
+void ret_cond(Flag flag, bool testSet)
+{
+    if (testFlag(flag))
+    {
+        if (testSet) 
+        {
+            ret();
+        }
+    }
+    else
+    {
+        if (!testSet) 
+        {
+            ret();
+        }
+    }
+}
+
+void reti(void)
+{
+    ret();
+    changeIME(true);
 }
