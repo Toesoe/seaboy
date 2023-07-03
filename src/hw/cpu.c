@@ -16,9 +16,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "instr.h"
+#include "mem.h"
+
 static cpu_t cpu;
 
 static bool enableInterrupts;
+
+static uint64_t cycleCount = 0;
 
 /**
  * @brief reset cpu to initial state
@@ -118,4 +123,244 @@ void setRegister8(Register8 reg, uint8_t value)
 void changeIME(bool enable)
 {
     enableInterrupts = enable;
+}
+
+void decodeCbPrefix(uint8_t instr)
+{
+    uint8_t hi = instr >> 4;
+    uint8_t lo = instr & 15;
+
+    Register8 reg = A;
+
+    switch (hi)
+    {
+        case 0x04:
+        {
+            if (lo < 0x06)
+            {
+                // bit 0
+                reg += lo + 1;
+                bit_n_reg(0, reg);
+                cycleCount += 8;
+            }
+            else if ((lo > 0x07) && (lo < 0x0F))
+            {
+                // bit 1
+                reg += lo - 0x06;
+                bit_n_reg(1, reg);
+                cycleCount += 8;
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(0, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+            else
+            {
+                bit_n_addr(1, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+
+            break;
+        }
+        case 0x05:
+        {
+            if (lo < 0x06)
+            {
+                // bit 2
+                reg += lo + 1;
+                bit_n_reg(2, reg);
+                cycleCount += 8;
+            }
+            else if ((lo > 0x07) && (lo < 0x0F))
+            {
+                // bit 3
+                reg += lo - 0x06;
+                bit_n_reg(3, reg);
+                cycleCount += 8;
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(2, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+            else
+            {
+                bit_n_addr(3, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+
+            break;
+        }
+        case 0x06:
+        {
+            if (lo < 0x06)
+            {
+                // bit 4
+                reg += lo + 1;
+                bit_n_reg(4, reg);
+                cycleCount += 8;
+            }
+            else if ((lo > 0x07) && (lo < 0x0F))
+            {
+                // bit 5
+                reg += lo - 0x06;
+                bit_n_reg(5, reg);
+                cycleCount += 8;
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(4, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+            else
+            {
+                bit_n_addr(5, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+
+            break;
+        }
+        case 0x07:
+        {
+            if (lo < 0x06)
+            {
+                // bit 6
+                reg += lo + 1;
+                bit_n_reg(6, reg);
+                cycleCount += 8;
+            }
+            else if ((lo > 0x07) && (lo < 0x0F))
+            {
+                // bit 7
+                reg += lo - 0x06;
+                bit_n_reg(7, reg);
+                cycleCount += 8;
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(6, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+            else
+            {
+                bit_n_addr(7, cpu.reg16.hl);
+                cycleCount += 16;
+            }
+
+            break;
+        }
+    }
+}
+
+void mapInstrToFunc(uint8_t instr)
+{
+    bool is16 = false;
+
+    uint8_t hi = instr >> 4;
+    uint8_t lo = instr & 15;
+
+    // main instruction decode loop
+    switch (instr)
+    {
+        case 0x00: // NOP
+        {
+            cycleCount += 4;
+            break;
+        }
+        case 0x01: // LD BC,d16
+        case 0x11: // LD DE,d16
+        case 0x21: // LD HL,d16
+        case 0x31: // LD SP,d16
+        {
+            Register16 reg = BC + hi; // use high nibble
+            ld_reg16_imm(reg, fetch16(cpu.reg16.pc + 1));
+            cpu.reg16.pc += 2;
+            cycleCount += 12;
+            break;
+        }
+        case 0x02: // LD (BC),A
+        case 0x12: // LD (DE),A
+        {
+            Register16 reg = BC + hi; // use high nibble
+            write8(cpu.reg8.a, cpu.reg16_arr[reg]);
+            cycleCount += 8;
+            break;
+        }
+        case 0x22: // LD (HL+),A
+        {
+            write8(cpu.reg8.a, cpu.reg16.hl++);
+            cycleCount += 8;
+            break;
+        }
+        case 0x32: // LD (HL-),A
+        {
+            write8(cpu.reg8.a, cpu.reg16.hl--);
+            cycleCount += 8;
+            break;
+        }
+        case 0xA8: // XOR B
+        case 0xA9: // XOR C
+        case 0xAA: // XOR D
+        case 0xAB: // XOR E
+        case 0xAC: // XOR H
+        case 0xAD: // XOR L
+        {
+            Register8 reg = B + (lo - 8); // use low nibble
+            xor8_a_n(cpu.reg8_arr[reg]);
+            cycleCount += 4;
+            break;
+        }
+        case 0xAF: // XOR A
+        {
+            xor8_a_n(cpu.reg8.a);
+            cycleCount += 4;
+            break;
+        }
+        case 0xAE: // XOR (HL)
+        {
+            xor8_a_n(fetch8(cpu.reg16.hl));
+            cycleCount += 8;
+            break;
+        }
+        case 0xCB: // CB-prefixed party!
+        {
+            decodeCbPrefix(instr);
+            break;
+        }
+        case 0x18: // JR r8
+        {
+            jr_n(fetch8(cpu.reg16.pc + 1));
+            cpu.reg16.pc++;
+            break;
+        }
+        case 0x20: // JR NZ,r8
+        case 0x28: // JR Z,r8
+        {
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, ((instr >> 4) == 8 ? true : false));
+            cpu.reg16.pc++;
+            break;
+        }
+        case 0x30: // JR NC,r8
+        case 0x38: // JR C,r8
+        {
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, ((instr >> 4) == 8 ? true : false));
+            cpu.reg16.pc++;
+            break;
+        }
+        case 0xC3: // JP a16
+        case 0xC2: // JP NZ,a16
+        case 0xD2: // JP NC,a16
+        {
+
+        }
+
+        default:
+        {
+            while(true);
+        }
+
+    }
+
+    stepCpu(is16);
 }

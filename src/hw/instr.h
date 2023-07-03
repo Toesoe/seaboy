@@ -289,3 +289,5 @@ void rst_n(uint8_t);
 void ret(void);
 void ret_cond(Flag, bool);
 void reti(void);
+
+#endif //!_INSTR_H_
