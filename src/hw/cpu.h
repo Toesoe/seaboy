@@ -45,9 +45,9 @@ typedef enum _Register8
     L
 } Register8;
 
-typedef union packed
+typedef union __attribute__((__packed__))
 {
-    struct packed
+    struct __attribute__((__packed__))
     {
         uint16_t af;
         uint16_t bc;
@@ -56,7 +56,7 @@ typedef union packed
         uint16_t sp;
         uint16_t pc;
     } reg16;
-    struct packed
+    struct __attribute__((__packed__))
     {
         uint8_t a;
         uint8_t f;

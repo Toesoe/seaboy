@@ -337,26 +337,146 @@ void mapInstrToFunc(uint8_t instr)
         case 0x20: // JR NZ,r8
         case 0x28: // JR Z,r8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, ((instr >> 4) == 8 ? true : false));
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, (hi == 0x8 ? true : false));
             cpu.reg16.pc++;
             break;
         }
         case 0x30: // JR NC,r8
         case 0x38: // JR C,r8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, ((instr >> 4) == 8 ? true : false));
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, (hi == 0x8 ? true : false));
             cpu.reg16.pc++;
             break;
         }
         case 0xC3: // JP a16
-        case 0xC2: // JP NZ,a16
-        case 0xD2: // JP NC,a16
         {
-
+            jmp_nn(fetch16(cpu.reg16.pc + 1));
+            cpu.reg16.pc += 2;
+        }
+        case 0xC2: // JP NZ,a16
+        case 0xCA: // JP Z,a16
+        {
+            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (hi == 0xA ? true : false));
+            break;
+        }
+        case 0xD2: // JP NC,a16
+        case 0xDA: // JP C,a16
+        {
+            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (hi == 0xA ? true : false));
+            break;
+        }
+        case 0x76: // HALT
+        {
+            while(true);
         }
 
         default:
         {
+            switch(hi)
+            {
+                Register8 regL = A;
+                Register8 regR = A;
+                bool hl = false;
+
+                case 0x04: // LD B,x - LD C,x
+                {
+                    regL  = (lo <= 0x07) ? B : C;
+                    
+                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                        cycleCount += 4; // 4 extra cycles
+                    }
+                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    {
+                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                    }
+
+                    if (!hl) { ld_reg8_reg8(regL, regR); }
+                    else     { ld_reg8_addr(regL, cpu.reg16.hl); }
+                    cycleCount += 4;
+
+                    break;
+                }
+                case 0x05: // LD D,x - LD E,x
+                {
+                    regL  = (lo <= 0x07) ? D : E;
+                    
+                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                        cycleCount += 4; // 4 extra cycles
+                    }
+                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    {
+                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                    }
+
+                    if (!hl) { ld_reg8_reg8(regL, regR); }
+                    else     { ld_reg8_addr(regL, cpu.reg16.hl); }
+                    cycleCount += 4;
+
+                    break;
+                }
+                case 0x06: // LD H,x - LD L,x
+                {
+                    regL  = (lo <= 0x07) ? H : L;
+                    
+                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                        cycleCount += 4; // 4 extra cycles
+                    }
+                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    {
+                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                    }
+
+                    if (!hl) { ld_reg8_reg8(regL, regR); }
+                    else     { ld_reg8_addr(regL, cpu.reg16.hl); }
+                    cycleCount += 4;
+
+                    break;
+                }
+                case 0x07: // LD (HL),x - LD A, x
+                {
+                    bool hlLeft = false;
+
+                    if (lo <= 0x07) // (HL). no need to worry about HALT, already handled above
+                    {
+                        hlLeft = true;
+                        cycleCount += 4; // 4 extra cycles
+                    }
+                    else if (lo == 0xE) // LD A, (HL)
+                    {
+                        hl = true;
+                        cycleCount += 4; // 4 extra cycles
+                    }
+                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    {
+                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                    }
+
+                    if (hlLeft)
+                    {
+                        ld_addr_reg8(cpu.reg16.hl, regR);
+                    }
+                    else if (hl)
+                    {
+                        ld_reg8_addr(regL, cpu.reg16.hl);
+                    }
+                    else
+                    {
+                        ld_reg8_reg8(regL, regR);
+                    }
+
+                    if (!hl) { ld_reg8_reg8(regL, regR); }
+                    else     { ld_reg8_addr(regL, fetch16(cpu.reg16.hl)); }
+                    cycleCount += 4;
+
+                    break;
+                }
+            }
             while(true);
         }
 
