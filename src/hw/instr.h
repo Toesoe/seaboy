@@ -19,7 +19,7 @@
  * @brief set the cpu_t ptr used in instr.c
  * 
  */
-void setCpuPtr(const cpu_t *);
+void instrSetCpuPtr(cpu_t *);
 
 /**
  * @brief load 8-bit register with immediate value
@@ -122,7 +122,11 @@ void cp8_a_n(uint8_t);
 void inc8_reg(Register8);
 void dec8_reg(Register8);
 
+void inc8_mem(uint16_t);
+void dec8_mem(uint16_t);
+
 void add16_hl_n(uint16_t);
+void dec16_hl_n(uint16_t);
 void add16_sp_n(uint16_t);
 void inc16_reg(Register16);
 void dec16_reg(Register16);

@@ -14,13 +14,13 @@
 
 static cpu_t *pCpu;
 
-#define CHECK_HALF_CARRY_ADD8(a, b) ((((a & 0xf) + (b & 0xf)) & 0x10) == 0x10)
-#define CHECK_HALF_CARRY_SUB8(a, b) ((((a & 0xf) - (b & 0xf)) & 0x10) == 0x10)
+#define CHECK_HALF_CARRY_ADD8(a, b) (((((a) & 0xf) + ((b) & 0xf)) & 0x10) == 0x10)
+#define CHECK_HALF_CARRY_SUB8(a, b) (((((a) & 0xf) - ((b) & 0xf)) & 0x10) == 0x10)
 
-#define CHECK_HALF_CARRY_ADD16(a, b) ((((a & 0xfff) + (b & 0xfff)) & 0x1000) == 0x1000)
-#define CHECK_HALF_CARRY_SUB16(a, b) ((((a & 0xfff) - (b & 0xfff)) & 0x1000) == 0x1000)
+#define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xfff) + ((b) & 0xfff)) & 0x1000) == 0x1000)
+#define CHECK_HALF_CARRY_SUB16(a, b) (((((a) & 0xfff) - ((b) & 0xfff)) & 0x1000) == 0x1000)
 
-void setCpuPtr(const cpu_t *pCpuSet)
+void instrSetCpuPtr(cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
 }
@@ -39,14 +39,12 @@ void ld_reg8_addr(Register8 left, uint16_t addr)
 
 void ld_reg8_reg8(Register8 left, Register8 right)
 {
-    uint8_t rval = (uint8_t)pCpu + (right * sizeof(uint8_t));
-    setRegister8(left, rval);
+    setRegister8(left, pCpu->reg8_arr[right]);
 }
 
 void ld_addr_reg8(uint16_t addr, Register8 right)
 {
-    uint8_t rval = (uint8_t)pCpu + (right * sizeof(uint8_t));
-    write8(addr, rval);
+    write8(addr, pCpu->reg8_arr[right]);
 }
 
 void ld_addr_imm(uint16_t addr, uint8_t val)
@@ -98,7 +96,6 @@ void ldhl_sp_offset(uint8_t offset)
 
 void push_reg16(Register16 reg)
 {
-    uint8_t rval = (uint8_t)pCpu + (reg * sizeof(uint16_t));
     write16(pCpu->reg16_arr[reg], pCpu->reg16.sp);
     setRegister16(SP,  pCpu->reg16.sp - 2);
 }
@@ -206,26 +203,42 @@ void cp8_a_n(uint8_t val)
 
 void inc8_reg(Register8 reg)
 {
-    uint8_t rval = (uint8_t)pCpu + (reg * sizeof(uint8_t));
-
     resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_ADD8(rval, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_ADD8(pCpu->reg8_arr[reg], 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    rval + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    pCpu->reg8_arr[reg] + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 
-    setRegister8(reg, (uint8_t)(rval + 1));
+    setRegister8(reg, (uint8_t)(pCpu->reg8_arr[reg] + 1));
 }
 
 void dec8_reg(Register8 reg)
 {
-    uint8_t rval = (uint8_t)pCpu + (reg * sizeof(uint8_t));
-
     resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_SUB8(rval, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_SUB8(pCpu->reg8_arr[reg], 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    rval - 1 == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    pCpu->reg8_arr[reg] - 1 == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 
-    setRegister8(reg, (uint8_t)(rval + 1));
+    setRegister8(reg, (uint8_t)(pCpu->reg8_arr[reg] - 1));
+}
+
+void inc8_mem(uint16_t addr)
+{
+    resetFlag(FLAG_N);
+    CHECK_HALF_CARRY_ADD8(fetch8(addr), 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
+    fetch8(addr) + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+
+    write8(fetch8(addr) + 1, addr);
+}
+
+void dec8_mem(uint16_t addr)
+{
+    resetFlag(FLAG_N);
+    CHECK_HALF_CARRY_SUB8(fetch8(addr), 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
+    fetch8(addr) - 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+
+    write8(fetch8(addr) - 1, addr);
 }
 
 // 16-bit arithmetic
@@ -251,14 +264,12 @@ void add16_sp_n(uint16_t val)
 
 void inc16_reg(Register16 reg)
 {
-    uint16_t rval = (uint16_t)pCpu + (reg * sizeof(uint16_t));
-    setRegister16(reg, rval + 1);
+    setRegister16(reg, pCpu->reg16_arr[reg] + 1);
 }
 
 void dec16_reg(Register16 reg)
 {
-    uint16_t rval = (uint16_t)pCpu + (reg * sizeof(uint16_t));
-    setRegister16(reg, rval - 1);
+    setRegister16(reg, pCpu->reg16_arr[reg] - 1);
 }
 
 // misc

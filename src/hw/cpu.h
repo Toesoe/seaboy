@@ -123,4 +123,9 @@ void setRegister8(Register8, uint8_t);
  */
 void changeIME(bool);
 
+/**
+ * @brief map instruction to actual decoding function
+ */
+void mapInstrToFunc(uint8_t);
+
 #endif // !_CPU_H_

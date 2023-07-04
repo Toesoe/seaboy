@@ -27,7 +27,7 @@ uint8_t fetch8(uint16_t addr)
 }
 uint16_t fetch16(uint16_t addr)
 {
-    return (uint16_t)(addressBus.bus[addr] << 8 | addressBus.bus[addr + 1]);
+    return (uint16_t)(addressBus.bus[addr + 1] << 8) | addressBus.bus[addr];
 }
 
 void write8(uint8_t val, uint16_t addr)
@@ -39,4 +39,9 @@ void write16(uint16_t val, uint16_t addr)
 {
     addressBus.bus[addr]     = (uint8_t)(val & 0xFF);
     addressBus.bus[addr + 1] = (uint8_t)(val >> 8);
+}
+
+bus_t *pGetBusPtr(void)
+{
+    return &addressBus;
 }

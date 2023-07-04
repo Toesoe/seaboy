@@ -51,10 +51,14 @@ typedef union __attribute__((__packed__))
     } mem;
 } bus_t;
 
-uint8_t  fetch8(uint16_t addr);
-uint16_t fetch16(uint16_t addr);
+void resetBus(void);
 
-void write8(uint8_t val, uint16_t addr);
-void write16(uint16_t val, uint16_t addr);
+uint8_t  fetch8(uint16_t);
+uint16_t fetch16(uint16_t);
+
+void write8(uint8_t, uint16_t);
+void write16(uint16_t, uint16_t);
+
+bus_t *pGetBusPtr(void);
 
 #endif // !_MEM_H_
