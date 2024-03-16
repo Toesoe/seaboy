@@ -640,7 +640,8 @@ void jr_n_cond(int8_t val, Flag flag, bool testSet)
 
 void call_nn(uint16_t val)
 {
-    write16(pCpu->reg16.pc + 2, pCpu->reg16.sp);
+    // push return address onto stack
+    write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
     pCpu->reg16.sp -= 2;
     setRegister16(PC, val);
 }

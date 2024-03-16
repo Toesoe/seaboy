@@ -25,6 +25,10 @@
 #define IO_SIZE         0x7F
 #define HRAM_SIZE       0x7E
 
+// VRAM related
+#define TILEBLOCK_SIZE  0x800
+#define TILEMAP_SIZE    0x400
+
 typedef union __attribute__((__packed__))
 {
     uint8_t bus[GB_BUS_SIZE];
@@ -33,7 +37,18 @@ typedef union __attribute__((__packed__))
     {
         uint8_t rom0[ROMN_SIZE];
         uint8_t romn[ROMN_SIZE];
-        uint8_t vram[VRAM_SIZE];
+        union __attribute__((__packed__))
+        {
+            uint8_t all[VRAM_SIZE];
+            struct __attribute__((__packed__))
+            {
+                uint8_t block0[TILEBLOCK_SIZE];
+                uint8_t block1[TILEBLOCK_SIZE];
+                uint8_t block2[TILEBLOCK_SIZE];
+                uint8_t map0[TILEMAP_SIZE];
+                uint8_t map1[TILEMAP_SIZE];
+            } tiles;
+        } vram;
         union __attribute__((__packed__))
         {
             uint8_t all[WRAM_SIZE];

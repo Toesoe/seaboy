@@ -71,7 +71,7 @@ bool testFlag(Flag flag)
  * @brief step the program counter
  * 
  * @param is16 if true, will increment PC by 2 when a 16-bit instruction has been executed
- * @note yeah, I know, I perform an addition with a bool, but the standard specifies it as 1
+ * @note yeah, I know, I perform an addition with a bool, but the standard specifies it as 1, so sshhh
  */
 void stepCpu(bool is16)
 {
@@ -358,6 +358,18 @@ void mapInstrToFunc(uint8_t instr)
             cycleCount += 8;
             break;
         }
+        case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit unsignedalue)
+        {
+            write8(cpu.reg8.a, 0xFF00 + fetch8(++cpu.reg16.pc));
+            cycleCount += 12;
+            break;
+        }
+        case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
+        {
+            ld_reg8_addr(A, 0xFF00 + fetch8(++cpu.reg16.pc));
+            cycleCount += 12;
+            break;
+        }
         case 0x0C: // INC C
         case 0x1C: // INC E
         case 0x2C: // INC L
@@ -429,6 +441,9 @@ void mapInstrToFunc(uint8_t instr)
             decodeCbPrefix();
             break;
         }
+        
+        // JUMP instructions
+
         case 0x18: // JR r8
         {
             jr_n(fetch8(cpu.reg16.pc + 1));
@@ -467,6 +482,62 @@ void mapInstrToFunc(uint8_t instr)
             jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (hi == 0xA ? true : false));
             break;
         }
+
+        // CALL instructions
+        
+        case 0xC4: // CALL NZ,a16
+        {
+            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, false);
+            break;
+        }
+        case 0xD4: // CALL NC,a16
+        {
+            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, false);
+            break;
+        }
+        case 0xCC: // CALL Z,a16
+        {
+            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, true);
+            break;
+        }
+        case 0xDC: // CALL C,a16
+        {
+            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, true);
+            break;
+        }
+        case 0xCD: // CALL a16
+        {
+            call_nn(fetch16(cpu.reg16.pc + 1));
+            break;
+        }
+
+        // PUSH instructions
+
+        case 0xC5: // PUSH BC
+        {
+            write16(cpu.reg16.sp - 2, BC);
+            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            break;
+        }
+        case 0xD5: // PUSH DE
+        {
+            write16(cpu.reg16.sp - 2, DE);
+            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            break;
+        }
+        case 0xE5: // PUSH HL
+        {
+            write16(cpu.reg16.sp - 2, HL);
+            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            break;
+        }
+        case 0xF5: // PUSH AF
+        {
+            write16(cpu.reg16.sp - 2, AF);
+            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            break;
+        }
+
         case 0x76: // HALT
         {
             while(true);
@@ -481,6 +552,7 @@ void mapInstrToFunc(uint8_t instr)
 
             switch(hi)
             {
+                // LD functions
                 case 0x04: // LD B,x - LD C,x
                 {
                     regL  = (lo <= 0x07) ? B : C;
