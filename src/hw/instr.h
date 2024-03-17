@@ -134,7 +134,7 @@ void dec16_reg(Register16);
 /**
  * @brief swap low & high nibble of a register
  */
-void swap8_n(Register8);
+void swap8_reg(Register8);
 
 /**
  * @brief swap low & high nibble of a memory value

@@ -136,6 +136,147 @@ static void decodeCbPrefix()
 
     switch (hi)
     {
+        // RLC/RRC
+        case 0x00:
+        {
+            if (lo < 0x06)
+            {
+                // RLC basic, B to L
+                rlc_reg(B + lo);
+            }
+            else if (lo == 0x06)
+            {
+                // RLC (HL)
+                rlc_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x07)
+            {
+                // RLC A
+                rlc_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // RRC basic, B to L
+                rrc_reg(B + (lo - 0x07));
+            }
+            else if (lo == 0x0E)
+            {
+                // RRC (HL)
+                rrc_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x0F)
+            {
+                // RRC A
+                rrc_reg(A);
+            }
+            break;
+        }
+        // RL/RR
+        case 0x01:
+        {
+            if (lo < 0x06)
+            {
+                // RL basic, B to L
+                rl_reg(B + lo);
+            }
+            else if (lo == 0x06)
+            {
+                // RL (HL)
+                rl_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x07)
+            {
+                // RL A
+                rl_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // RR basic, B to L
+                rr_reg(B + (lo - 0x07));
+            }
+            else if (lo == 0x0E)
+            {
+                // RR (HL)
+                rr_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x0F)
+            {
+                // RR A
+                rr_reg(A);
+            }
+            break;
+        }
+        // SLA/SRA
+        case 0x02:
+        {
+            if (lo < 0x06)
+            {
+                // SLA basic, B to L
+                sla_reg(B + lo);
+            }
+            else if (lo == 0x06)
+            {
+                // SLA (HL)
+                sla_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x07)
+            {
+                // SLA A
+                sla_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // SRA basic, B to L
+                sra_reg(B + (lo - 0x07));
+            }
+            else if (lo == 0x0E)
+            {
+                // SRA (HL)
+                sra_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x0F)
+            {
+                // SRA A
+                sra_reg(A);
+            }
+            break;
+        }
+        // SWAP/SRL
+        case 0x03:
+        {
+            if (lo < 0x06)
+            {
+                // SLA basic, B to L
+                swap8_reg(B + lo);
+            }
+            else if (lo == 0x06)
+            {
+                // SLA (HL)
+                swap8_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x07)
+            {
+                // SLA A
+                swap8_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // SRA basic, B to L
+                srl_reg(B + (lo - 0x07));
+            }
+            else if (lo == 0x0E)
+            {
+                // SRA (HL)
+                srl_addr(cpu.reg16.hl);
+            }
+            else if (lo == 0x0F)
+            {
+                // SRA A
+                srl_reg(A);
+            }
+            break;
+        }
+        // BIT 0/1, reg
         case 0x04:
         {
             if (lo < 0x06)
@@ -165,6 +306,7 @@ static void decodeCbPrefix()
 
             break;
         }
+        // BIT 2/3, reg
         case 0x05:
         {
             if (lo < 0x06)
@@ -194,6 +336,7 @@ static void decodeCbPrefix()
 
             break;
         }
+        // BIT 4/5, reg
         case 0x06:
         {
             if (lo < 0x06)
@@ -223,6 +366,7 @@ static void decodeCbPrefix()
 
             break;
         }
+        // BIT 6/7, reg
         case 0x07:
         {
             if (lo < 0x06)
@@ -250,6 +394,10 @@ static void decodeCbPrefix()
                 cycleCount += 16;
             }
 
+            break;
+        }
+        default:
+        {
             break;
         }
     }
@@ -343,31 +491,38 @@ void mapInstrToFunc(uint8_t instr)
         case 0x3E: // LD A,d8
         {
             ld_reg8_imm(A, ++cpu.reg16.pc);
-            cycleCount += 8;
             break;
         }
         case 0xE2: // LD (C),A (write to IO-port C)
         {
             write8(cpu.reg8.a, 0xFF00 + cpu.reg8.c);
-            cycleCount += 8;
             break;
         }
         case 0xF2: // LD A, (C) (read from IO port C)
         {
             setRegister8(A, fetch8(0xFF00 + cpu.reg8.c));
-            cycleCount += 8;
             break;
         }
-        case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit unsignedalue)
+        case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit unsigned value)
         {
             write8(cpu.reg8.a, 0xFF00 + fetch8(++cpu.reg16.pc));
-            cycleCount += 12;
             break;
         }
         case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
         {
             ld_reg8_addr(A, 0xFF00 + fetch8(++cpu.reg16.pc));
-            cycleCount += 12;
+            break;
+        }
+        case 0xEA: // LD (a16), A (load from A to to 0xFF00+16-bit unsigned value)
+        {
+            write8(cpu.reg8.a, 0xFF00 + fetch16(++cpu.reg16.pc));
+            is16 = true;
+            break;
+        }
+        case 0xFA: // LD A, (a16) (load from 0xFF00+16-bit unsigned value to A)
+        {
+            ld_reg8_addr(A, 0xFF00 + fetch16(++cpu.reg16.pc));
+            is16 = true;
             break;
         }
         case 0x0C: // INC C
@@ -412,28 +567,38 @@ void mapInstrToFunc(uint8_t instr)
             cycleCount += 12;
             break;
         }
-        case 0xA8: // XOR B
-        case 0xA9: // XOR C
-        case 0xAA: // XOR D
-        case 0xAB: // XOR E
-        case 0xAC: // XOR H
-        case 0xAD: // XOR L
+        case 0x03: // INC BC
+        case 0x13: // INC DE
+        case 0x23: // INC HL
+        case 0x33: // INC SP
+        case 0x0B: // DEC BC
+        case 0x1B: // DEC DE
+        case 0x2B: // DEC HL
+        case 0x3B: // DEC SP
         {
-            Register8 reg = B + (lo - 8); // use low nibble
-            xor8_a_n(cpu.reg8_arr[reg]);
-            cycleCount += 4;
+            Register16 reg = BC + hi; // use high nibble
+            if (lo == 0x03) { inc16_reg(reg); }
+            else            { dec16_reg(reg); }
             break;
         }
-        case 0xAF: // XOR A
+        case 0x07: // RLCA (rotate left circular)
         {
-            xor8_a_n(cpu.reg8.a);
-            cycleCount += 4;
+            rlca();
             break;
         }
-        case 0xAE: // XOR (HL)
+        case 0x17: // RLA (rotate left through carry)
         {
-            xor8_a_n(fetch8(cpu.reg16.hl));
-            cycleCount += 8;
+            rla();
+            break;
+        }
+        case 0x0F: // RRCA (rotate right circular)
+        {
+            rrca();
+            break;
+        }
+        case 0x1F: // RRA (rotate right through carry)
+        {
+            rra();
             break;
         }
         case 0xCB: // CB-prefixed
@@ -441,7 +606,14 @@ void mapInstrToFunc(uint8_t instr)
             decodeCbPrefix();
             break;
         }
-        
+
+        // Weirdly positioned instructions in map
+
+        case 0xFE: // CP d8
+        {
+            cp8_a_n(fetch8(++cpu.reg16.pc));
+            break;
+        }
         // JUMP instructions
 
         case 0x18: // JR r8
@@ -453,14 +625,14 @@ void mapInstrToFunc(uint8_t instr)
         case 0x20: // JR NZ,r8
         case 0x28: // JR Z,r8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, (hi == 0x8 ? true : false));
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, (hi == 0x8 ? false : true));
             cpu.reg16.pc++;
             break;
         }
         case 0x30: // JR NC,r8
         case 0x38: // JR C,r8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, (hi == 0x8 ? true : false));
+            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, (hi == 0x8 ? false : true));
             cpu.reg16.pc++;
             break;
         }
@@ -511,30 +683,61 @@ void mapInstrToFunc(uint8_t instr)
             break;
         }
 
+        // POP instructions
+
+        case 0xC1: // POP BC
+        {
+            pop_reg16(BC);
+            break;
+        }
+        case 0xD1: // POP DE
+        {
+            pop_reg16(DE);
+            break;
+        }
+        case 0xE1: // POP HL
+        {
+            pop_reg16(HL);
+            break;
+        }
+        case 0xF1: // POP AF
+        {
+            pop_reg16(AF);
+            break;
+        }
+
         // PUSH instructions
 
         case 0xC5: // PUSH BC
         {
-            write16(cpu.reg16.sp - 2, BC);
-            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            push_reg16(BC);
             break;
         }
         case 0xD5: // PUSH DE
         {
-            write16(cpu.reg16.sp - 2, DE);
-            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            push_reg16(DE);
             break;
         }
         case 0xE5: // PUSH HL
         {
-            write16(cpu.reg16.sp - 2, HL);
-            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            push_reg16(HL);
             break;
         }
         case 0xF5: // PUSH AF
         {
-            write16(cpu.reg16.sp - 2, AF);
-            ld_reg16_imm(SP, cpu.reg16.sp - 2);
+            push_reg16(AF);
+            break;
+        }
+
+        // RET instructions
+        case 0xC9: // RET
+        {
+            ret();
+            break;
+        }
+        case 0xD9: // RETI
+        {
+            reti(); // TODO interrupts
             break;
         }
 
@@ -557,7 +760,7 @@ void mapInstrToFunc(uint8_t instr)
                 {
                     regL  = (lo <= 0x07) ? B : C;
                     
-                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
                     {
                         hl = true;
                         cycleCount += 4; // 4 extra cycles
@@ -646,6 +849,152 @@ void mapInstrToFunc(uint8_t instr)
                     }
 
                     cycleCount += 4;
+                    break;
+                }
+
+                // ADD/ADC A
+                case 0x08:
+                {
+                    if (lo < 0x06)
+                    {
+                        // ADD, B to L
+                        add8_a_n(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // ADD (HL)
+                        add8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // ADD A
+                        add8_a_n(cpu.reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // ADC, B to L
+                        adc8_a_n(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // ADC (HL)
+                        adc8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // ADC A
+                        adc8_a_n(cpu.reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // SUB/SBC <reg>
+                case 0x09:
+                {
+                    if (lo < 0x06)
+                    {
+                        // SUB, B to L
+                        sub8_n_a(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // SUB (HL)
+                        sub8_n_a(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // SUB A
+                        sub8_n_a(cpu.reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // SBC, B to L
+                        sbc8_a_n(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // SBC (HL)
+                        sbc8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // SBC A
+                        sbc8_a_n(cpu.reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // AND/XOR <reg>
+                case 0x0A:
+                {
+                    if (lo < 0x06)
+                    {
+                        // AND, B to L
+                        and8_a_n(cpu.reg8_arr[lo + 1]);
+                        break;
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // AND (HL)
+                        and8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // AND A
+                        and8_a_n(cpu.reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // XOR, B to L
+                        xor8_a_n(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // XOR (HL)
+                        xor8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // XOR A
+                        xor8_a_n(cpu.reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // OR/CP <reg>
+                case 0x0B:
+                {
+                    if (lo < 0x06)
+                    {
+                        // OR, B to L
+                        or8_a_n(cpu.reg8_arr[lo + 1]);
+                        break;
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // OR (HL)
+                        or8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // OR A
+                        or8_a_n(cpu.reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // CP, B to L
+                        cp8_a_n(cpu.reg8_arr[lo + 1]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // CP (HL)
+                        cp8_a_n(fetch8(cpu.reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // CP A
+                        cp8_a_n(cpu.reg8_arr[A]);
+                    }
                     break;
                 }
                 default:

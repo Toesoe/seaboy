@@ -96,8 +96,8 @@ void ldhl_sp_offset(uint8_t offset)
 
 void push_reg16(Register16 reg)
 {
-    write16(pCpu->reg16_arr[reg], pCpu->reg16.sp);
     setRegister16(SP,  pCpu->reg16.sp - 2);
+    write16(pCpu->reg16_arr[reg], pCpu->reg16.sp);
 }
 
 void pop_reg16(Register16 reg)
@@ -274,7 +274,7 @@ void dec16_reg(Register16 reg)
 
 // misc
 
-void swap8_n(Register8 reg)
+void swap8_reg(Register8 reg)
 {
     setRegister8(reg, ((pCpu->reg8_arr[reg] & 0x0F) << 4) | ((pCpu->reg8_arr[reg] & 0xF0) >> 4));
 }
@@ -336,29 +336,28 @@ void scf(void)
 
 // rotates & shifts
 
+/**
+ * @brief 0x07, rotate left circular accumulator
+ * @note  bit 7 is copied to the CARRY flag, CARRY goes to bit 0
+ * 
+ */
 void rlca(void)
 {
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (pCpu->reg8.a & 0x80) { setFlag(FLAG_C); } // get bit 7
-    setRegister8(A, (pCpu->reg8.a << 1 | pCpu->reg8.a >> 7));
-
-    if (pCpu->reg8.a == 0) { setFlag(FLAG_Z); }
+    if (pCpu->reg8.a & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    setRegister8(A, (pCpu->reg8.a << 1 | (testFlag(FLAG_C) & 0x01)));
 }
 
+/**
+ * @brief 0x17, rotate left accumulator
+ * @note  bit 7 goes to carry and 0. functionally identical to rlca
+ * 
+ */
 void rla(void)
 {
-    uint8_t regVal = pCpu->reg8.a;
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    setRegister8(A, (pCpu->reg8.a << 1 | testFlag(FLAG_C)));
-
-    if (regVal & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
-
-    if (pCpu->reg8.a == 0) { setFlag(FLAG_Z); }
+    rlca();
 }
 
 void rrca(void)
@@ -641,9 +640,9 @@ void jr_n_cond(int8_t val, Flag flag, bool testSet)
 void call_nn(uint16_t val)
 {
     // push return address onto stack
-    write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
     pCpu->reg16.sp -= 2;
-    setRegister16(PC, val);
+    write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
+    setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
 }
 
 void call_nn_cond(uint16_t val, Flag flag, bool testSet)
@@ -676,8 +675,8 @@ void rst_n(uint8_t val)
         case 0x28:
         case 0x30:
         case 0x38:
-            write16(pCpu->reg16.pc, pCpu->reg16.sp);
             pCpu->reg16.sp -= 2;
+            write16(pCpu->reg16.pc, pCpu->reg16.sp);
             setRegister16(PC, val);
             break;
         default:
@@ -687,7 +686,7 @@ void rst_n(uint8_t val)
 
 void ret(void)
 {
-    setRegister16(PC, fetch16(pCpu->reg16.sp));
+    setRegister16(PC, fetch16(pCpu->reg16.sp) - 1); // -1 as we always increment at the end of the main loop
     pCpu->reg16.sp += 2;
 }
 

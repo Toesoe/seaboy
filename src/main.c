@@ -15,6 +15,7 @@
 #include "drv/render.h"
 
 #include <string.h>
+#include <stdio.h>
 
 /*
 	LD SP,$fffe		; $0000  Setup Stack
@@ -218,6 +219,7 @@ int main()
 
     while(true)
     {
+        printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
         mapInstrToFunc(pBus->bus[pCpu->reg16.pc]);
     }
 }
