@@ -21,6 +21,13 @@ typedef enum {
     WHITE = 3  // 11
 } ETilePalette_t;
 
-void buildTile(uint32_t);
+typedef struct
+{
+    ETilePalette_t pixels[8];
+} SFIFO_t;
+
+void buildTiles(uint32_t);
+
+void ppuLoop(void);
 
 #endif //!_PPU_H_

@@ -10,14 +10,21 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+#include <wchar.h>
 
 #include "render.h"
 
-static ETilePalette_t framebuffer[DISP_WIDTH][DISP_HEIGHT] = { 0 };
+static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
 
-void setPixel(SPixel_t *pPixel)
+/**
+ * @brief set a pixel value at a specific screen x/y location
+ * 
+ * @param pPixel pointer to pixel value
+ */
+void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
 {
-    framebuffer[pPixel->x][pPixel->y] = pPixel->color;
+    memcpy(&framebuffer[y][xStart], pFifo->pixels, 8);
 }
 
 void debugFramebuffer(void)
@@ -26,7 +33,7 @@ void debugFramebuffer(void)
     {
         for (size_t x = 0; x < DISP_WIDTH; x++)
         {
-            printf("%d ", framebuffer[x][y]);
+            printf("%c", framebuffer[y][x] == 3 ? '.' : ' ');
         }
         printf("\n");
     }

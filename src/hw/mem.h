@@ -65,14 +65,14 @@ typedef struct
 
 typedef struct
 {
-    uint8_t bgWindowEnablePrio : 1;
-    uint8_t objEnable : 1;
-    uint8_t objSize : 1;
-    uint8_t bgTilemap : 1;
-    uint8_t bgWindowTileData : 1;
-    uint8_t bgWindowEnable : 1;
-    uint8_t bgWindowTileMap : 1;
-    uint8_t lcdPPUEnable : 1;
+    uint8_t bgWindowEnablePrio : 1; // 0
+    uint8_t objEnable : 1;          // 1
+    uint8_t objSize : 1;            // 2
+    uint8_t bgTilemap : 1;          // 3
+    uint8_t bgWindowTileData : 1;   // 4
+    uint8_t bgWindowEnable : 1;     // 5
+    uint8_t bgWindowTileMap : 1;    // 6
+    uint8_t lcdPPUEnable : 1;       // 7
 } SRegLCDC_t;
 
 typedef struct
@@ -127,47 +127,39 @@ typedef union __attribute__((__packed__))
         uint8_t echo[ECHO_SIZE];                // 0xE000 -> 0xFDFF
         uint8_t oam[OAM_SIZE];                  // 0xFE00 -> 0xFE9F
         uint8_t _NOUSE[0x5F];                   // 0xFEA0 -> 0xFEFF
-        union __attribute__((__packed__))
+        struct __attribute__((__packed__))
         {
-            uint8_t all[IO_SIZE];               // 0xFF00 -> 0xFF7F
+            sRegJOYP_t joypad;              // 0xFF00
+            uint8_t serData;                // 0xFF01
+            sRegSC_t serControl;                  // 0xFF02
+            uint8_t divRegister;            // 0xFF04
+            STimers_t timers;               // 0xFF05 -> 0xFF07
+            uint8_t intFlag;                // 0xFF0F
+            uint8_t audio[22];              // 0xFF10 -> 0xFF26 TODO: implement audio
+            uint8_t wavepattern[0xF];       // 0xFF30 -> 0xFF3F TODO: implement
             struct __attribute__((__packed__))
             {
-                sRegJOYP_t joypad;
-                uint8_t serData;                // 0xFF01
-                sRegSC_t serControl;                  // 0xFF02
-                uint8_t divRegister;            // 0xFF04
-                STimers_t timers;               // 0xFF05 -> 0xFF07
-                uint8_t intFlag;                // 0xFF0F
-                uint8_t audio[22];              // 0xFF10 -> 0xFF26 TODO: implement audio
-                uint8_t wavepattern[0xF];       // 0xFF30 -> 0xFF3F TODO: implement
-                union __attribute__((__packed__))
-                {
-                    uint8_t all[0xB];           // 0xFF40 -> 0xFF4B
-                    struct __attribute__((__packed__))
-                    {
-                        SRegLCDC_t lcdc;        // 0xFF40
-                        SRegLCDStat_t lcdStat;  // 0xFF41
-                        uint8_t scy;            // 0xFF42
-                        uint8_t scx;            // 0xFF43
-                        uint8_t ly;             // 0xFF44
-                        uint8_t lyc;            // 0xFF45
-                        uint8_t dma;            // 0xFF46
-                        SRegPaletteData_t bgp;  // 0xFF47
-                        SRegPaletteData_t obp0; // 0xFF48
-                        SRegPaletteData_t obp1; // 0xFF49
-                        uint8_t wy;             // 0xFF4A
-                        uint8_t wx;             // 0xFF4B
-                    } regs;
-                } lcdcontrol;
-                uint8_t vramBankSelect;         // 0xFF4F: CGB only
-                uint8_t disableBootrom;         // 0xFF50
-                // TODO: extend with CGB DMA stuff
-                uint8_t _unusedForNow[0x2F];    // 0xFF51 -> 0xFF7F
-            } regs;
-        } ioreg;
+                SRegLCDC_t control;        // 0xFF40
+                SRegLCDStat_t stat;  // 0xFF41
+                uint8_t scy;            // 0xFF42
+                uint8_t scx;            // 0xFF43
+                uint8_t ly;             // 0xFF44
+                uint8_t lyc;            // 0xFF45
+                uint8_t dma;            // 0xFF46
+                SRegPaletteData_t bgp;  // 0xFF47
+                SRegPaletteData_t obp0; // 0xFF48
+                SRegPaletteData_t obp1; // 0xFF49
+                uint8_t wy;             // 0xFF4A
+                uint8_t wx;             // 0xFF4B
+            } lcd;
+            uint8_t vramBankSelect;         // 0xFF4F: CGB only
+            uint8_t disableBootrom;         // 0xFF50
+            // TODO: extend with CGB DMA stuff
+            uint8_t _unusedForNow[0x2F];    // 0xFF51 -> 0xFF7F
+        } ioregs;
         uint8_t hram[HRAM_SIZE];                // 0xFF80 -> 0xFFFE
-        uint8_t iereg;                          // 0xFFFF
-    } mem;
+        uint8_t interruptEnable;                // 0xFFFF
+    } map;
 } bus_t;
 
 void resetBus(void);

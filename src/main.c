@@ -222,7 +222,13 @@ int main()
 
     while(true)
     {
-        printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
+        //printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
         mapInstrToFunc(pBus->bus[pCpu->reg16.pc]);
+        ppuLoop();
+
+        if (pCpu->reg16.pc > 0xE6)
+        {
+            debugFramebuffer();
+        }
     }
 }

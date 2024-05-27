@@ -26,7 +26,7 @@ typedef struct {
     ETilePalette_t color;
 } SPixel_t;
 
-void setPixel(SPixel_t *);
+void writeFifoToFramebuffer(SFIFO_t *, uint8_t, uint8_t);
 
 void debugFramebuffer(void);
 
