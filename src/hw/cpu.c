@@ -36,6 +36,24 @@ void resetCpu(void)
 }
 
 /**
+ * @brief set CPU registers to post-bootrom values
+ * 
+ */
+void cpuSkipBootrom(void)
+{
+    cpu.reg8.a = 0x01;
+    cpu.reg8.f = 0xB0;
+    cpu.reg8.b = 0x00;
+    cpu.reg8.c = 0x13;
+    cpu.reg8.d = 0x00;
+    cpu.reg8.e = 0xD8;
+    cpu.reg8.h = 0x01;
+    cpu.reg8.l = 0x4D;
+    cpu.reg16.sp = 0xFFFE;
+    cpu.reg16.pc = 0x100;
+}
+
+/**
  * @brief set a specific flag
  * 
  * @param flag flag to set

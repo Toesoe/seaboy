@@ -41,3 +41,8 @@ void buildTile(uint32_t addr)
         addr += 2;
     }
 }
+
+void ppuLoop(void)
+{
+    
+}

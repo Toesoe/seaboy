@@ -217,6 +217,9 @@ int main()
 
     memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len);
 
+    // copy tiles to cart as well for testing
+    memcpy(&pBus->bus[0x104], &bootrom_bin[0xA8], 48);
+
     while(true)
     {
         printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);

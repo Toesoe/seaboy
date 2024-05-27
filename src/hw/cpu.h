@@ -79,6 +79,11 @@ typedef union __attribute__((__packed__))
 void resetCpu(void);
 
 /**
+ * @brief set CPU registers to post-bootrom values
+ */
+void cpuSkipBootrom(void);
+
+/**
  * @brief set a specific flag
 */
 void setFlag(Flag);
