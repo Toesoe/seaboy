@@ -23,8 +23,6 @@ static cpu_t cpu;
 
 static bool enableInterrupts;
 
-static uint64_t cycleCount = 0;
-
 static int getRegisterIndexByOpcodeNibble(uint8_t);
 
 /**
@@ -146,11 +144,13 @@ void changeIME(bool enable)
     enableInterrupts = enable;
 }
 
-static void decodeCbPrefix()
+static int decodeCbPrefix()
 {
     uint8_t instr = fetch8(++cpu.reg16.pc); // CB prefix takes next instruction
     uint8_t hi = instr >> 4;
     uint8_t lo = instr & 15;
+
+    int addCycles = 0;
 
     Register8 reg = A;
 
@@ -304,24 +304,22 @@ static void decodeCbPrefix()
                 // bit 0
                 reg += lo + 1;
                 bit_n_reg(0, reg);
-                cycleCount += 8;
             }
             else if ((lo > 0x07) && (lo < 0x0F))
             {
                 // bit 1
                 reg += lo - 0x06;
                 bit_n_reg(1, reg);
-                cycleCount += 8;
             }
             else if (lo == 0x06)
             {
                 bit_n_addr(0, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
             else
             {
                 bit_n_addr(1, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
 
             break;
@@ -334,24 +332,22 @@ static void decodeCbPrefix()
                 // bit 2
                 reg += lo + 1;
                 bit_n_reg(2, reg);
-                cycleCount += 8;
             }
             else if ((lo > 0x07) && (lo < 0x0F))
             {
                 // bit 3
                 reg += lo - 0x06;
                 bit_n_reg(3, reg);
-                cycleCount += 8;
             }
             else if (lo == 0x06)
             {
                 bit_n_addr(2, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
             else
             {
                 bit_n_addr(3, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
 
             break;
@@ -364,24 +360,22 @@ static void decodeCbPrefix()
                 // bit 4
                 reg += lo + 1;
                 bit_n_reg(4, reg);
-                cycleCount += 8;
             }
             else if ((lo > 0x07) && (lo < 0x0F))
             {
                 // bit 5
                 reg += lo - 0x06;
                 bit_n_reg(5, reg);
-                cycleCount += 8;
             }
             else if (lo == 0x06)
             {
                 bit_n_addr(4, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
             else
             {
                 bit_n_addr(5, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
 
             break;
@@ -394,24 +388,22 @@ static void decodeCbPrefix()
                 // bit 6
                 reg += lo + 1;
                 bit_n_reg(6, reg);
-                cycleCount += 8;
             }
             else if ((lo > 0x07) && (lo < 0x0F))
             {
                 // bit 7
                 reg += lo - 0x06;
                 bit_n_reg(7, reg);
-                cycleCount += 8;
             }
             else if (lo == 0x06)
             {
                 bit_n_addr(6, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
             else
             {
                 bit_n_addr(7, cpu.reg16.hl);
-                cycleCount += 16;
+                addCycles = 1;
             }
 
             break;
@@ -421,11 +413,15 @@ static void decodeCbPrefix()
             break;
         }
     }
+
+    return addCycles;
 }
 
-void mapInstrToFunc(uint8_t instr)
+// TODO: add cycle counts, use this to execute PPU cycles
+int executeInstruction(uint8_t instr)
 {
     bool is16 = false;
+    int cycleCount = 0;
 
     uint8_t hi = instr >> 4;
     uint8_t lo = instr & 15;
@@ -435,7 +431,7 @@ void mapInstrToFunc(uint8_t instr)
     {
         case 0x00: // NOP
         {
-            cycleCount += 4;
+            cycleCount = 1;
             break;
         }
         case 0x01: // LD BC,d16
@@ -446,7 +442,7 @@ void mapInstrToFunc(uint8_t instr)
             Register16 reg = BC + hi; // use high nibble
             ld_reg16_imm(reg, fetch16(cpu.reg16.pc + 1));
             cpu.reg16.pc += 2;
-            cycleCount += 12;
+            cycleCount = 3;
             break;
         }
         case 0x02: // LD (BC),A
@@ -454,19 +450,19 @@ void mapInstrToFunc(uint8_t instr)
         {
             Register16 reg = BC + hi; // use high nibble
             write8(cpu.reg8.a, cpu.reg16_arr[reg]);
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x22: // LD (HL+),A
         {
             write8(cpu.reg8.a, cpu.reg16.hl++);
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x32: // LD (HL-),A
         {
             write8(cpu.reg8.a, cpu.reg16.hl--);
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x06: // LD B,d8
@@ -475,23 +471,25 @@ void mapInstrToFunc(uint8_t instr)
         {
             Register8 reg = getRegisterIndexByOpcodeNibble(lo - 6); // use low nibble
             ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x36: // LD (HL),d8
         {
             write8(++cpu.reg16.pc, cpu.reg16.hl);
-            cycleCount += 12;
+            cycleCount = 3;
             break;
         }
         case 0x0A: // LD A,(BC)
         {
             ld_reg8_addr(A, cpu.reg16.bc);
+            cycleCount = 2;
             break;
         }
         case 0x1A: // LD A,(DE)
         {
             ld_reg8_addr(A, cpu.reg16.de);
+            cycleCount = 2;
             break;
         }
         case 0x2A: // LD A,(HL+)
@@ -499,7 +497,7 @@ void mapInstrToFunc(uint8_t instr)
         {
             ld_reg8_addr(A, HL);
             (hi == 0x02) ? cpu.reg16.hl-- : cpu.reg16.hl++;
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x0E: // LD C,d8
@@ -508,43 +506,50 @@ void mapInstrToFunc(uint8_t instr)
         {
             Register8 reg = getRegisterIndexByOpcodeNibble(lo - 0x0E + 1); // use low nibble
             ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
-            cycleCount += 8;
+            cycleCount = 2;
             break;
         }
         case 0x3E: // LD A,d8
         {
             ld_reg8_imm(A, fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
             break;
         }
         case 0xE2: // LD (0xFF00 + C),A
         {
             write8(cpu.reg8.a, 0xFF00 + cpu.reg8.c);
+            cycleCount = 2;
             break;
         }
         case 0xF2: // LD A, (0xFF00 + C)
         {
             setRegister8(A, fetch8(0xFF00 + cpu.reg8.c));
+            cycleCount = 2;
             break;
         }
         case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit unsigned value)
         {
             write8(cpu.reg8.a, 0xFF00 + fetch8(++cpu.reg16.pc));
+            cycleCount = 3;
             break;
         }
         case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
         {
             ld_reg8_addr(A, 0xFF00 + fetch8(++cpu.reg16.pc));
+            cycleCount = 3;
             break;
         }
         case 0xEA: // LD (a16), A (load from A to to 0xFF00+16-bit unsigned value)
         {
             write8(cpu.reg8.a, 0xFF00 + fetch16(++cpu.reg16.pc));
+            cycleCount = 4;
             is16 = true;
             break;
         }
         case 0xFA: // LD A, (a16) (load from 0xFF00+16-bit unsigned value to A)
         {
             ld_reg8_addr(A, 0xFF00 + fetch16(++cpu.reg16.pc));
+            cycleCount = 4;
             is16 = true;
             break;
         }
@@ -558,7 +563,7 @@ void mapInstrToFunc(uint8_t instr)
             Register8 reg = getRegisterIndexByOpcodeNibble(hi + 1); // use high nibble
             if (lo == 0x0C) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
-            cycleCount += 4;
+            cycleCount = 1;
             break;
         }
         case 0x3C: // INC A
@@ -566,7 +571,7 @@ void mapInstrToFunc(uint8_t instr)
         {
             if (lo == 0x0C) { inc8_reg(A); }
             else            { dec8_reg(A); }
-            cycleCount += 4;
+            cycleCount = 1;
             break;
         }
         case 0x04: // INC B
@@ -579,7 +584,7 @@ void mapInstrToFunc(uint8_t instr)
             Register8 reg = getRegisterIndexByOpcodeNibble(hi); // use high nibble
             if (lo == 0x04) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
-            cycleCount += 4;
+            cycleCount = 1;
             break;
         }
         case 0x34: // INC (HL)
@@ -587,7 +592,7 @@ void mapInstrToFunc(uint8_t instr)
         {
             if (lo == 0x04) { inc8_mem(cpu.reg16.hl); }
             else            { dec8_mem(cpu.reg16.hl); }
-            cycleCount += 12;
+            cycleCount = 3;
             break;
         }
         case 0x03: // INC BC
@@ -602,31 +607,37 @@ void mapInstrToFunc(uint8_t instr)
             Register16 reg = BC + hi; // use high nibble
             if (lo == 0x03) { inc16_reg(reg); }
             else            { dec16_reg(reg); }
+            cycleCount = 2;
             break;
         }
         case 0x07: // RLCA (rotate left circular)
         {
             rlca();
+            cycleCount = 1;
             break;
         }
         case 0x17: // RLA (rotate left through carry)
         {
             rla();
+            cycleCount = 1;
             break;
         }
         case 0x0F: // RRCA (rotate right circular)
         {
             rrca();
+            cycleCount = 1;
             break;
         }
         case 0x1F: // RRA (rotate right through carry)
         {
             rra();
+            cycleCount = 1;
             break;
         }
         case 0xCB: // CB-prefixed
         {
-            decodeCbPrefix();
+            cycleCount = 2; // all CB's use at least 2 cycles
+            cycleCount += decodeCbPrefix();
             break;
         }
 
@@ -634,11 +645,8 @@ void mapInstrToFunc(uint8_t instr)
 
         case 0xFE: // CP d8
         {
-            if (cpu.reg8.a > 0x20)
-            {
-                __asm("nop");
-            }
             cp8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
             break;
         }
         // JUMP instructions
@@ -646,20 +654,23 @@ void mapInstrToFunc(uint8_t instr)
         case 0x18: // JR s8
         {
             jr_n_signed(fetch8(cpu.reg16.pc + 1));
+            cycleCount = 3;
             cpu.reg16.pc++;
             break;
         }
         case 0x20: // JR NZ,s8
         case 0x28: // JR Z,s8
         {
-            jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_Z, (lo == 0x8 ? true : false));
+            cycleCount = 2;
+            if (jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_Z, (lo == 0x8 ? true : false))) { cycleCount++; }
             cpu.reg16.pc++;
             break;
         }
         case 0x30: // JR NC,s8
         case 0x38: // JR C,s8
         {
-            jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_C, (lo == 0x8 ? true : false));
+            cycleCount = 2;
+            if (jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_C, (lo == 0x8 ? true : false))) { cycleCount++; }
             cpu.reg16.pc++;
             break;
         }
@@ -667,18 +678,21 @@ void mapInstrToFunc(uint8_t instr)
         {
             jmp_nn(fetch16(cpu.reg16.pc + 1));
             cpu.reg16.pc += 2;
+            cycleCount = 4;
             break;
         }
         case 0xC2: // JP NZ,a16
         case 0xCA: // JP Z,a16
         {
-            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (lo == 0xA ? true : false));
+            cycleCount = 3;
+            if (jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (lo == 0xA ? true : false))) { cycleCount++; }
             break;
         }
         case 0xD2: // JP NC,a16
         case 0xDA: // JP C,a16
         {
-            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (lo == 0xA ? true : false));
+            cycleCount = 3;
+            if (jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (lo == 0xA ? true : false))) { cycleCount++; }
             break;
         }
 
@@ -686,26 +700,31 @@ void mapInstrToFunc(uint8_t instr)
         
         case 0xC4: // CALL NZ,a16
         {
-            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, false);
+            cycleCount = 3;
+            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, false)) { cycleCount += 3; }
             break;
         }
         case 0xD4: // CALL NC,a16
         {
-            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, false);
+            cycleCount = 3;
+            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, false)) { cycleCount += 3; }
             break;
         }
         case 0xCC: // CALL Z,a16
         {
-            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, true);
+            cycleCount = 3;
+            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, true)) { cycleCount += 3; }
             break;
         }
         case 0xDC: // CALL C,a16
         {
-            call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, true);
+            cycleCount = 3;
+            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, true)) { cycleCount += 3; }
             break;
         }
         case 0xCD: // CALL a16
         {
+            cycleCount = 6;
             call_nn(fetch16(cpu.reg16.pc + 1));
             break;
         }
@@ -715,21 +734,25 @@ void mapInstrToFunc(uint8_t instr)
         case 0xC1: // POP BC
         {
             pop_reg16(BC);
+            cycleCount = 3;
             break;
         }
         case 0xD1: // POP DE
         {
             pop_reg16(DE);
+            cycleCount = 3;
             break;
         }
         case 0xE1: // POP HL
         {
             pop_reg16(HL);
+            cycleCount = 3;
             break;
         }
         case 0xF1: // POP AF
         {
             pop_reg16(AF);
+            cycleCount = 3;
             break;
         }
 
@@ -738,21 +761,25 @@ void mapInstrToFunc(uint8_t instr)
         case 0xC5: // PUSH BC
         {
             push_reg16(BC);
+            cycleCount = 4;
             break;
         }
         case 0xD5: // PUSH DE
         {
             push_reg16(DE);
+            cycleCount = 4;
             break;
         }
         case 0xE5: // PUSH HL
         {
             push_reg16(HL);
+            cycleCount = 4;
             break;
         }
         case 0xF5: // PUSH AF
         {
             push_reg16(AF);
+            cycleCount = 4;
             break;
         }
 
@@ -760,16 +787,19 @@ void mapInstrToFunc(uint8_t instr)
         case 0xC9: // RET
         {
             ret();
+            cycleCount = 4;
             break;
         }
         case 0xD9: // RETI
         {
             reti(); // TODO interrupts
+            cycleCount = 4;
             break;
         }
 
         case 0x76: // HALT
         {
+            cycleCount = 1;
             while(true);
             break;
         }
@@ -779,6 +809,9 @@ void mapInstrToFunc(uint8_t instr)
             Register8 regL = A;
             Register8 regR = A;
             bool hl = false;
+            bool hlLeft = false;
+
+            cycleCount = 1; // by default: only (HL) has 2 cycles
 
             switch(hi)
             {
@@ -790,7 +823,6 @@ void mapInstrToFunc(uint8_t instr)
                     if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
                     {
                         hl = true;
-                        cycleCount += 4; // 4 extra cycles
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
@@ -799,7 +831,6 @@ void mapInstrToFunc(uint8_t instr)
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
                     else     { ld_reg8_addr(regL, cpu.reg16.hl); }
-                    cycleCount += 4;
 
                     break;
                 }
@@ -810,7 +841,6 @@ void mapInstrToFunc(uint8_t instr)
                     if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
                     {
                         hl = true;
-                        cycleCount += 4; // 4 extra cycles
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
@@ -819,7 +849,6 @@ void mapInstrToFunc(uint8_t instr)
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
                     else     { ld_reg8_addr(regL, cpu.reg16.hl); }
-                    cycleCount += 4;
 
                     break;
                 }
@@ -830,7 +859,6 @@ void mapInstrToFunc(uint8_t instr)
                     if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
                     {
                         hl = true;
-                        cycleCount += 4; // 4 extra cycles
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
@@ -839,23 +867,18 @@ void mapInstrToFunc(uint8_t instr)
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
                     else     { ld_reg8_addr(regL, cpu.reg16.hl); }
-                    cycleCount += 4;
 
                     break;
                 }
                 case 0x07: // LD (HL),x - LD A, x
                 {
-                    bool hlLeft = false;
-
                     if (lo <= 0x07) // (HL). no need to worry about HALT, already handled above
                     {
                         hlLeft = true;
-                        cycleCount += 4; // 4 extra cycles
                     }
                     else if (lo == 0xE) // LD A, (HL)
                     {
                         hl = true;
-                        cycleCount += 4; // 4 extra cycles
                     }
                     else if (lo != 0xF) // 0xF == LD A, A
                     {
@@ -875,7 +898,6 @@ void mapInstrToFunc(uint8_t instr)
                         ld_reg8_reg8(regL, regR);
                     }
 
-                    cycleCount += 4;
                     break;
                 }
 
@@ -891,6 +913,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // ADD (HL)
                         add8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x07)
                     {
@@ -906,6 +929,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // ADC (HL)
                         adc8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x0F)
                     {
@@ -927,6 +951,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // SUB (HL)
                         sub8_n_a(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x07)
                     {
@@ -942,6 +967,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // SBC (HL)
                         sbc8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x0F)
                     {
@@ -964,6 +990,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // AND (HL)
                         and8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x07)
                     {
@@ -979,6 +1006,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // XOR (HL)
                         xor8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x0F)
                     {
@@ -1001,6 +1029,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // OR (HL)
                         or8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x07)
                     {
@@ -1016,6 +1045,7 @@ void mapInstrToFunc(uint8_t instr)
                     {
                         // CP (HL)
                         cp8_a_n(fetch8(cpu.reg16.hl));
+                        hl = true;
                     }
                     else if (lo == 0x0F)
                     {
@@ -1029,11 +1059,15 @@ void mapInstrToFunc(uint8_t instr)
                     while (true);
                 }
             }
+
+            if (hl || hlLeft) { cycleCount += 1; }
         }
 
     }
 
     stepCpu(is16);
+
+    return cycleCount;
 }
 
 static int getRegisterIndexByOpcodeNibble(uint8_t lo)

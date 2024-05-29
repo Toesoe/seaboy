@@ -536,8 +536,9 @@ void jmp_nn(uint16_t addr)
  * @param addr addr to jump to
  * @param flag flag to test
  * @param testSet if true, will execute jump if specified flag is set
+ * @return true if we jumped
  */
-void jmp_nn_cond(uint16_t addr, Flag flag, bool testSet)
+bool jmp_nn_cond(uint16_t addr, Flag flag, bool testSet)
 {
     if (testFlag(flag))
     {
@@ -564,7 +565,10 @@ void jr_n_signed(int8_t val)
     setRegister16(PC, pCpu->reg16.pc + (signed char)val);
 }
 
-void jr_n_cond(int8_t val, Flag flag, bool testSet)
+/**
+ * @return true if we jumped
+ */
+bool jr_n_cond(int8_t val, Flag flag, bool testSet)
 {
     if (testFlag(flag))
     {
@@ -576,7 +580,10 @@ void jr_n_cond(int8_t val, Flag flag, bool testSet)
     }
 }
 
-void jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
+/**
+ * @return true if we jumped
+ */
+bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
 {
     if (testFlag(flag))
     {
@@ -599,7 +606,7 @@ void call_nn(uint16_t val)
     setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
 }
 
-void call_nn_cond(uint16_t val, Flag flag, bool testSet)
+bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
 {
     if (testFlag(flag))
     {
@@ -644,7 +651,7 @@ void ret(void)
     pCpu->reg16.sp += 2;
 }
 
-void ret_cond(Flag flag, bool testSet)
+bool ret_cond(Flag flag, bool testSet)
 {
     if (testFlag(flag))
     {

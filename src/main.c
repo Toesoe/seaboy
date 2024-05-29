@@ -233,18 +233,11 @@ int main()
             instrHit[pBus->bus[pCpu->reg16.pc]] = true;
         }
 
-        if (pCpu->reg16.pc == 0x2f)
-        {
-            __asm("nop");
-        }
-
         printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
-        mapInstrToFunc(pBus->bus[pCpu->reg16.pc]);
 
-        if (pCpu->reg16.pc == 0x32)
-        {
-            __asm("nop");
-        }
+        int ppuCycles = executeInstruction(pBus->bus[pCpu->reg16.pc]) * 4; // ppu runs 4x faster
+
+        bool isFrameEnd = ppuLoop(ppuCycles); // 1 CPU cycle = 4 PPU cycles
 
         if (pCpu->reg16.pc == 0xE0)
         {

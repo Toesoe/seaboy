@@ -133,7 +133,8 @@ void changeIME(bool);
 
 /**
  * @brief map instruction to actual decoding function
+ * @return total execution cycles used for the last instruction
  */
-void mapInstrToFunc(uint8_t);
+int executeInstruction(uint8_t);
 
 #endif // !_CPU_H_

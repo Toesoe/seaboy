@@ -32,13 +32,14 @@
 #define PIXEL_FIFO_SIZE 8
 #define OAM_MAX_SPRITES 10
 
+#define CYCLES_PER_FRAME 70224 // 154 scanlines * 456 cycle
+
 typedef struct
 {
     SPixel_t pixels[TILE_DIM_X][TILE_DIM_Y];
 } STile_t;
 
-//static STile_t backgroundLayer[BG_TILES_X][BG_TILES_Y];
-//static STile_t windowLayer[WINDOW_TILES_X][WINDOW_TILES_Y];
+static int cycleCount = 0;
 
 
 /**
@@ -75,7 +76,13 @@ static SFIFO_t tileFetcher(uint16_t tilemapAddr, uint8_t tileLine)
     return newFifo;
 }
 
-void ppuLoop(void)
+/**
+ * @brief main PPU loop
+ * 
+ * @param cyclesToRun amount of PPU cycles to run this loop
+ * @return true if frame has been completed
+ */
+bool ppuLoop(int cyclesToRun)
 {
     bus_t *pBus = pGetBusPtr();
     size_t winX = pBus->map.ioregs.lcd.wx - 7;
@@ -85,6 +92,7 @@ void ppuLoop(void)
     // LY + 16 must be greater than or equal to Sprite Y-Position
     // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in Tall-Sprite-Mode)
     // The amount of sprites already stored in the OAM Buffer must be less than 10
+    pBus->map.ioregs.lcd.stat.ppuMode = 0x02; // signal Mode 2
 
     // Drawing (mode 3)
     // here we push stuff to the framebuffer
@@ -92,7 +100,7 @@ void ppuLoop(void)
     // first, build tiles
     // then push to display
     // TODO implement. for now use 0x9800 as default
-    pBus->map.ioregs.lcd.stat.ppuMode = 0x03;
+    pBus->map.ioregs.lcd.stat.ppuMode = 0x03; // signal Mode 3
 
     // check which tilemap to use
 
@@ -113,8 +121,11 @@ void ppuLoop(void)
             writeFifoToFramebuffer(&currentFifo, x, y);
         }
     }
+    pBus->map.ioregs.lcd.stat.ppuMode = 0x00; // signal Mode 0
 
     // Vblank (mode 1)
+    pBus->map.ioregs.lcd.stat.ppuMode = 0x01; // signal Mode 1
+
     for (size_t y = LCD_VIEWPORT_Y; y < LCD_VIEWPORT_Y + LCD_VBLANK_LEN; y++)
     {
         // do vblank stuff

@@ -13,6 +13,7 @@
 #define _PPU_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef enum {
     BLACK = 0, // 00; transparent when used in objects
@@ -28,6 +29,6 @@ typedef struct
 
 void buildTiles(uint32_t);
 
-void ppuLoop(void);
+bool ppuLoop(int);
 
 #endif //!_PPU_H_
