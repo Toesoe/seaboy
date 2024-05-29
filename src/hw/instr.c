@@ -540,14 +540,18 @@ void jmp_nn(uint16_t addr)
  */
 bool jmp_nn_cond(uint16_t addr, Flag flag, bool testSet)
 {
+    bool ret = false;
+
     if (testFlag(flag))
     {
-        if (testSet) { jmp_nn(addr); }
+        if (testSet) { jmp_nn(addr); ret = true; }
     }
     else
     {
-        if (!testSet) { jmp_nn(addr); }
+        if (!testSet) { jmp_nn(addr); ret = true; }
     }
+
+    return ret;
 }
 
 void jmp_hl(void)
@@ -570,14 +574,18 @@ void jr_n_signed(int8_t val)
  */
 bool jr_n_cond(int8_t val, Flag flag, bool testSet)
 {
+    bool ret = false;
+
     if (testFlag(flag))
     {
-        if (testSet) { jr_n(val); }
+        if (testSet) { jr_n(val); ret = true; }
     }
     else
     {
-        if (!testSet) { jr_n(val); }
+        if (!testSet) { jr_n(val); ret = true; }
     }
+
+    return ret;
 }
 
 /**
@@ -585,14 +593,18 @@ bool jr_n_cond(int8_t val, Flag flag, bool testSet)
  */
 bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
 {
+    bool ret = false;
+
     if (testFlag(flag))
     {
-        if (testSet) { jr_n_signed(val); }
+        if (testSet) { jr_n_signed(val); ret = true; }
     }
     else
     {
-        if (!testSet) { jr_n_signed(val); }
+        if (!testSet) { jr_n_signed(val); ret = true; }
     }
+
+    return ret;
 }
 
 // calls
@@ -608,11 +620,14 @@ void call_nn(uint16_t val)
 
 bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
 {
+    bool ret = false;
+
     if (testFlag(flag))
     {
         if (testSet) 
         {
             call_nn(val);
+            ret = true;
         }
     }
     else
@@ -620,8 +635,11 @@ bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
         if (!testSet) 
         {
             call_nn(val);
+            ret = true;
         }
     }
+
+    return ret;
 }
 
 void rst_n(uint8_t val)
@@ -653,11 +671,14 @@ void ret(void)
 
 bool ret_cond(Flag flag, bool testSet)
 {
+    bool retval = false;
+
     if (testFlag(flag))
     {
         if (testSet) 
         {
             ret();
+            retval = true;
         }
     }
     else
@@ -665,8 +686,11 @@ bool ret_cond(Flag flag, bool testSet)
         if (!testSet) 
         {
             ret();
+            retval = true;
         }
     }
+
+    return retval;
 }
 
 void reti(void)

@@ -139,8 +139,8 @@ typedef union __attribute__((__packed__))
             uint8_t wavepattern[0xF];       // 0xFF30 -> 0xFF3F TODO: implement
             struct __attribute__((__packed__))
             {
-                SRegLCDC_t control;        // 0xFF40
-                SRegLCDStat_t stat;  // 0xFF41
+                SRegLCDC_t control;     // 0xFF40
+                SRegLCDStat_t stat;     // 0xFF41
                 uint8_t scy;            // 0xFF42
                 uint8_t scx;            // 0xFF43
                 uint8_t ly;             // 0xFF44

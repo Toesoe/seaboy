@@ -41,7 +41,6 @@ typedef struct
 
 static int cycleCount = 0;
 
-
 /**
  * @brief builds current FIFO buffer, 8 pixels
  * 
@@ -84,50 +83,103 @@ static SFIFO_t tileFetcher(uint16_t tilemapAddr, uint8_t tileLine)
  */
 bool ppuLoop(int cyclesToRun)
 {
+    bool frameEnd = false;
+
     bus_t *pBus = pGetBusPtr();
-    size_t winX = pBus->map.ioregs.lcd.wx - 7;
 
-    // OAM SCAN (mode 2)
-    // Sprite X-Position must be greater than 0
-    // LY + 16 must be greater than or equal to Sprite Y-Position
-    // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in Tall-Sprite-Mode)
-    // The amount of sprites already stored in the OAM Buffer must be less than 10
-    pBus->map.ioregs.lcd.stat.ppuMode = 0x02; // signal Mode 2
-
-    // Drawing (mode 3)
-    // here we push stuff to the framebuffer
-    // sprites have prio over bg
-    // first, build tiles
-    // then push to display
-    // TODO implement. for now use 0x9800 as default
-    pBus->map.ioregs.lcd.stat.ppuMode = 0x03; // signal Mode 3
-
-    // check which tilemap to use
-
-
-    for (size_t y = 0; y < LCD_VIEWPORT_Y; y++)
+    if (pBus->map.ioregs.lcd.control.lcdPPUEnable)
     {
-        for (size_t x = 0; x < LCD_VIEWPORT_X; x += (LCD_VIEWPORT_X / PIXEL_FIFO_SIZE))
+        size_t winX = pBus->map.ioregs.lcd.wx - 7;
+
+        static int mode1Length = 4560;
+        static bool mode3Done = false;
+        static bool mode0Done = false;
+        static int mode0Length = 0;
+
+        // one line is 456 cycles
+
+        static int currentLineLength = 456;
+        int currentModeOverflow = 0;
+
+        if (currentLineLength >= 376)
         {
-            uint16_t tileAddr = 0x9800;
-            if (((pBus->map.ioregs.lcd.control.bgTilemap) &&
-                (x <= winX)) ||
-                ((pBus->map.ioregs.lcd.control.bgWindowTileMap) &&
-                (x >= winX)))
+            if ((currentLineLength - cyclesToRun) < 376)
             {
-                tileAddr = 0x9C00;
+                currentModeOverflow = 376 - (currentLineLength - cyclesToRun);
             }
-            SFIFO_t currentFifo = tileFetcher(tileAddr, y);
-            writeFifoToFramebuffer(&currentFifo, x, y);
+            cycleCount += cyclesToRun - currentModeOverflow;
+            currentLineLength -= cyclesToRun + currentModeOverflow;
+            pBus->map.ioregs.lcd.stat.ppuMode = 0x02; // signal Mode 2
+
+            // OAM SCAN (mode 2)
+            // Sprite X-Position must be greater than 0
+            // LY + 16 must be greater than or equal to Sprite Y-Position
+            // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in Tall-Sprite-Mode)
+            // The amount of sprites already stored in the OAM Buffer must be less than 10
+        }
+        if ((currentModeOverflow > 0) ||
+            ((currentLineLength < 376) && (currentModeOverflow == 0)))
+        {
+            // Drawing (mode 3)
+            // here we push stuff to the framebuffer
+            // sprites have prio over bg
+            // first, build tiles
+            // then push to display
+            // TODO implement. for now use 0x9800 as default
+            pBus->map.ioregs.lcd.stat.ppuMode = 0x03; // signal Mode 3
+
+            // check which tilemap to use
+
+
+            for (size_t y = 0; y < LCD_VIEWPORT_Y; y++)
+            {
+                for (size_t x = 0; x < LCD_VIEWPORT_X; x += (LCD_VIEWPORT_X / PIXEL_FIFO_SIZE))
+                {
+                    uint16_t tileAddr = 0x9800;
+                    if (((pBus->map.ioregs.lcd.control.bgTilemap) &&
+                        (x <= winX)) ||
+                        ((pBus->map.ioregs.lcd.control.bgWindowTileMap) &&
+                        (x >= winX)))
+                    {
+                        tileAddr = 0x9C00;
+                    }
+                    SFIFO_t currentFifo = tileFetcher(tileAddr, y);
+                    writeFifoToFramebuffer(&currentFifo, x, y);
+                }
+            }
+            mode3Done = true;
+        }
+
+        if (mode3Done)
+        {
+            if (mode0Length == 0) { mode0Length = currentLineLength; }
+            pBus->map.ioregs.lcd.stat.ppuMode = 0x00; // signal Mode 0, hblank
+
+            // ...
+
+            mode0Done = true;
+        }
+
+        if (mode0Done)
+        {
+            // Vblank (mode 1)
+            pBus->map.ioregs.lcd.stat.ppuMode = 0x01; // signal Mode 1
+
+            if (mode1Length > 0)
+            {
+                mode1Length -= cyclesToRun;
+            }
+            else
+            {
+                frameEnd = true;
+                mode3Done = false;
+                mode0Done = false;
+                mode0Length = 0;
+                mode1Length = 4560;
+                currentLineLength = 476;
+            }
         }
     }
-    pBus->map.ioregs.lcd.stat.ppuMode = 0x00; // signal Mode 0
 
-    // Vblank (mode 1)
-    pBus->map.ioregs.lcd.stat.ppuMode = 0x01; // signal Mode 1
-
-    for (size_t y = LCD_VIEWPORT_Y; y < LCD_VIEWPORT_Y + LCD_VBLANK_LEN; y++)
-    {
-        // do vblank stuff
-    }
+    return frameEnd;
 }

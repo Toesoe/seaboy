@@ -239,6 +239,11 @@ int main()
 
         bool isFrameEnd = ppuLoop(ppuCycles); // 1 CPU cycle = 4 PPU cycles
 
+        if (isFrameEnd)
+        {
+            //debugFramebuffer();
+        }
+
         if (pCpu->reg16.pc == 0xE0)
         {
             debugFramebuffer();
