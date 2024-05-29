@@ -285,7 +285,9 @@ void jmp_nn(uint16_t);
 void jmp_nn_cond(uint16_t, Flag, bool);
 void jmp_hl(void);
 void jr_n(int8_t);
+void jr_n_signed(int8_t);
 void jr_n_cond(int8_t, Flag, bool);
+void jr_n_cond_signed(int8_t, Flag, bool);
 
 void call_nn(uint16_t);
 void call_nn_cond(uint16_t, Flag, bool);

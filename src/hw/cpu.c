@@ -25,6 +25,8 @@ static bool enableInterrupts;
 
 static uint64_t cycleCount = 0;
 
+static int getRegisterIndexByOpcodeNibble(uint8_t);
+
 /**
  * @brief reset cpu to initial state
  */
@@ -160,7 +162,7 @@ static void decodeCbPrefix()
             if (lo < 0x06)
             {
                 // RLC basic, B to L
-                rlc_reg(B + lo);
+                rlc_reg(getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
@@ -175,7 +177,7 @@ static void decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // RRC basic, B to L
-                rrc_reg(B + (lo - 0x07));
+                rrc_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
             }
             else if (lo == 0x0E)
             {
@@ -195,7 +197,7 @@ static void decodeCbPrefix()
             if (lo < 0x06)
             {
                 // RL basic, B to L
-                rl_reg(B + lo);
+                rl_reg(getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
@@ -210,7 +212,7 @@ static void decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // RR basic, B to L
-                rr_reg(B + (lo - 0x07));
+                rr_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
             }
             else if (lo == 0x0E)
             {
@@ -230,7 +232,7 @@ static void decodeCbPrefix()
             if (lo < 0x06)
             {
                 // SLA basic, B to L
-                sla_reg(B + lo);
+                sla_reg(getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
@@ -245,7 +247,7 @@ static void decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // SRA basic, B to L
-                sra_reg(B + (lo - 0x07));
+                sra_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
             }
             else if (lo == 0x0E)
             {
@@ -265,7 +267,7 @@ static void decodeCbPrefix()
             if (lo < 0x06)
             {
                 // SLA basic, B to L
-                swap8_reg(B + lo);
+                swap8_reg(getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
@@ -280,7 +282,7 @@ static void decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // SRA basic, B to L
-                srl_reg(B + (lo - 0x07));
+                srl_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
             }
             else if (lo == 0x0E)
             {
@@ -471,7 +473,7 @@ void mapInstrToFunc(uint8_t instr)
         case 0x16: // LD D,d8
         case 0x26: // LD H,d8
         {
-            Register8 reg = B + ((lo - 6) * 2); // use low nibble
+            Register8 reg = getRegisterIndexByOpcodeNibble(lo - 6); // use low nibble
             ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
             cycleCount += 8;
             break;
@@ -483,10 +485,13 @@ void mapInstrToFunc(uint8_t instr)
             break;
         }
         case 0x0A: // LD A,(BC)
+        {
+            ld_reg8_addr(A, cpu.reg16.bc);
+            break;
+        }
         case 0x1A: // LD A,(DE)
         {
-            Register16 reg = BC + (lo - 0x0A); // use low nibble
-            ld_reg8_addr(A, reg);
+            ld_reg8_addr(A, cpu.reg16.de);
             break;
         }
         case 0x2A: // LD A,(HL+)
@@ -501,22 +506,22 @@ void mapInstrToFunc(uint8_t instr)
         case 0x1E: // LD E,d8
         case 0x2E: // LD L,d8
         {
-            Register8 reg = C + ((lo - 0x0E) * 2); // use low nibble
-            ld_reg8_imm(reg, ++cpu.reg16.pc);
+            Register8 reg = getRegisterIndexByOpcodeNibble(lo - 0x0E + 1); // use low nibble
+            ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
             cycleCount += 8;
             break;
         }
         case 0x3E: // LD A,d8
         {
-            ld_reg8_imm(A, ++cpu.reg16.pc);
+            ld_reg8_imm(A, fetch8(++cpu.reg16.pc));
             break;
         }
-        case 0xE2: // LD (C),A (write to IO-port C)
+        case 0xE2: // LD (0xFF00 + C),A
         {
             write8(cpu.reg8.a, 0xFF00 + cpu.reg8.c);
             break;
         }
-        case 0xF2: // LD A, (C) (read from IO port C)
+        case 0xF2: // LD A, (0xFF00 + C)
         {
             setRegister8(A, fetch8(0xFF00 + cpu.reg8.c));
             break;
@@ -550,7 +555,7 @@ void mapInstrToFunc(uint8_t instr)
         case 0x1D: // DEC E
         case 0x2D: // DEC L
         {
-            Register8 reg = C + (hi * 2); // use high nibble
+            Register8 reg = getRegisterIndexByOpcodeNibble(hi + 1); // use high nibble
             if (lo == 0x0C) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
             cycleCount += 4;
@@ -571,7 +576,7 @@ void mapInstrToFunc(uint8_t instr)
         case 0x15: // DEC D
         case 0x25: // DEC H
         {
-            Register8 reg = B + (hi * 2); // use high nibble
+            Register8 reg = getRegisterIndexByOpcodeNibble(hi); // use high nibble
             if (lo == 0x04) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
             cycleCount += 4;
@@ -629,28 +634,32 @@ void mapInstrToFunc(uint8_t instr)
 
         case 0xFE: // CP d8
         {
+            if (cpu.reg8.a > 0x20)
+            {
+                __asm("nop");
+            }
             cp8_a_n(fetch8(++cpu.reg16.pc));
             break;
         }
         // JUMP instructions
 
-        case 0x18: // JR r8
+        case 0x18: // JR s8
         {
-            jr_n(fetch8(cpu.reg16.pc + 1));
+            jr_n_signed(fetch8(cpu.reg16.pc + 1));
             cpu.reg16.pc++;
             break;
         }
-        case 0x20: // JR NZ,r8
-        case 0x28: // JR Z,r8
+        case 0x20: // JR NZ,s8
+        case 0x28: // JR Z,s8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_Z, (hi == 0x8 ? false : true));
+            jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_Z, (lo == 0x8 ? true : false));
             cpu.reg16.pc++;
             break;
         }
-        case 0x30: // JR NC,r8
-        case 0x38: // JR C,r8
+        case 0x30: // JR NC,s8
+        case 0x38: // JR C,s8
         {
-            jr_n_cond(fetch8(cpu.reg16.pc + 1), FLAG_C, (hi == 0x8 ? false : true));
+            jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_C, (lo == 0x8 ? true : false));
             cpu.reg16.pc++;
             break;
         }
@@ -663,13 +672,13 @@ void mapInstrToFunc(uint8_t instr)
         case 0xC2: // JP NZ,a16
         case 0xCA: // JP Z,a16
         {
-            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (hi == 0xA ? true : false));
+            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (lo == 0xA ? true : false));
             break;
         }
         case 0xD2: // JP NC,a16
         case 0xDA: // JP C,a16
         {
-            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (hi == 0xA ? true : false));
+            jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (lo == 0xA ? true : false));
             break;
         }
 
@@ -785,7 +794,7 @@ void mapInstrToFunc(uint8_t instr)
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
-                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) : getRegisterIndexByOpcodeNibble(lo - 0x07);
                     }
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
@@ -805,7 +814,7 @@ void mapInstrToFunc(uint8_t instr)
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
-                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) : getRegisterIndexByOpcodeNibble(lo - 0x07);
                     }
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
@@ -825,7 +834,7 @@ void mapInstrToFunc(uint8_t instr)
                     }
                     else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
                     {
-                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) : getRegisterIndexByOpcodeNibble(lo - 0x07);
                     }
 
                     if (!hl) { ld_reg8_reg8(regL, regR); }
@@ -848,9 +857,9 @@ void mapInstrToFunc(uint8_t instr)
                         hl = true;
                         cycleCount += 4; // 4 extra cycles
                     }
-                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    else if (lo != 0xF) // 0xF == LD A, A
                     {
-                        regR += (lo > 0x07) ? lo + 1 : lo - 0x06;
+                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) : getRegisterIndexByOpcodeNibble(lo - 0x08);
                     }
 
                     if (hlLeft)
@@ -876,7 +885,7 @@ void mapInstrToFunc(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // ADD, B to L
-                        add8_a_n(cpu.reg8_arr[lo + 1]);
+                        add8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                     }
                     else if (lo == 0x06)
                     {
@@ -891,7 +900,7 @@ void mapInstrToFunc(uint8_t instr)
                     else if (lo < 0x0E)
                     {
                         // ADC, B to L
-                        adc8_a_n(cpu.reg8_arr[lo + 1]);
+                        adc8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
@@ -912,7 +921,7 @@ void mapInstrToFunc(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // SUB, B to L
-                        sub8_n_a(cpu.reg8_arr[lo + 1]);
+                        sub8_n_a(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                     }
                     else if (lo == 0x06)
                     {
@@ -927,7 +936,7 @@ void mapInstrToFunc(uint8_t instr)
                     else if (lo < 0x0E)
                     {
                         // SBC, B to L
-                        sbc8_a_n(cpu.reg8_arr[lo + 1]);
+                        sbc8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
@@ -948,7 +957,7 @@ void mapInstrToFunc(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // AND, B to L
-                        and8_a_n(cpu.reg8_arr[lo + 1]);
+                        and8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                         break;
                     }
                     else if (lo == 0x06)
@@ -964,7 +973,7 @@ void mapInstrToFunc(uint8_t instr)
                     else if (lo < 0x0E)
                     {
                         // XOR, B to L
-                        xor8_a_n(cpu.reg8_arr[lo + 1]);
+                        xor8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
@@ -985,7 +994,7 @@ void mapInstrToFunc(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // OR, B to L
-                        or8_a_n(cpu.reg8_arr[lo + 1]);
+                        or8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                         break;
                     }
                     else if (lo == 0x06)
@@ -1001,7 +1010,7 @@ void mapInstrToFunc(uint8_t instr)
                     else if (lo < 0x0E)
                     {
                         // CP, B to L
-                        cp8_a_n(cpu.reg8_arr[lo + 1]);
+                        cp8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
@@ -1025,4 +1034,19 @@ void mapInstrToFunc(uint8_t instr)
     }
 
     stepCpu(is16);
+}
+
+static int getRegisterIndexByOpcodeNibble(uint8_t lo)
+{
+    switch (lo)
+    {
+        case 0x0: return 3; // B
+        case 0x1: return 2; // C
+        case 0x2: return 5; // D
+        case 0x3: return 4; // E
+        case 0x4: return 7; // H
+        case 0x5: return 6; // L
+        // Add other cases if needed
+        default: return -1; // Invalid register
+    }
 }

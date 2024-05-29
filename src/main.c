@@ -47,7 +47,7 @@ Addr_0007:
 Addr_0027:
 	LD A,(DE)		; $0027
 	CALL $0095		; $0028
-	CALL $0096		; $002b
+	CALL $0096		; $002b SP = FFFE, A = first byte of logo in cart
 	INC DE		; $002e
 	LD A,E		; $002f
 	CP $34		; $0030
@@ -213,6 +213,10 @@ int main()
     bus_t *pBus = pGetBusPtr();
     const cpu_t *pCpu = getCpuObject();
 
+    bool instrHit[255] = {0};
+
+    uint16_t highestPc = 0;
+
     resetCpu();
 
     memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len);
@@ -222,11 +226,27 @@ int main()
 
     while(true)
     {
-        //printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
-        mapInstrToFunc(pBus->bus[pCpu->reg16.pc]);
-        ppuLoop();
+        if ((pCpu->reg16.pc > highestPc) && !instrHit[pBus->bus[pCpu->reg16.pc]])
+        {
+            // map instruction as hit
+            highestPc = pCpu->reg16.pc;
+            instrHit[pBus->bus[pCpu->reg16.pc]] = true;
+        }
 
-        if (pCpu->reg16.pc > 0xE6)
+        if (pCpu->reg16.pc == 0x2f)
+        {
+            __asm("nop");
+        }
+
+        printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
+        mapInstrToFunc(pBus->bus[pCpu->reg16.pc]);
+
+        if (pCpu->reg16.pc == 0x32)
+        {
+            __asm("nop");
+        }
+
+        if (pCpu->reg16.pc == 0xE0)
         {
             debugFramebuffer();
         }

@@ -52,7 +52,7 @@ static SFIFO_t tileFetcher(uint16_t tilemapAddr, uint8_t tileLine)
     // first byte is LSB, second MSB. e.g. addr == 0x3C (00111100b), addr+1 == 0x7E (01111110b):
     // result is 00 10 11 11 11 11 10 00
 
-    SFIFO_t newFifo = {0};
+    SFIFO_t newFifo = {{3, 3, 3, 3, 3, 3, 3, 3}};
     static uint16_t tileIndex = 0;
 
     uint8_t tileId = fetch8(tilemapAddr + tileIndex);

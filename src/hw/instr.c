@@ -20,6 +20,16 @@ static cpu_t *pCpu;
 #define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xfff) + ((b) & 0xfff)) & 0x1000) == 0x1000)
 #define CHECK_HALF_CARRY_SUB16(a, b) (((((a) & 0xfff) - ((b) & 0xfff)) & 0x1000) == 0x1000)
 
+
+// static defs
+static uint8_t _rl(uint8_t val);
+static uint8_t _rlc(uint8_t val);
+static uint8_t _sla(uint8_t val);
+static uint8_t _rr(uint8_t val);
+static uint8_t _rrc(uint8_t val);
+static uint8_t _sra(uint8_t val);
+static uint8_t _srl(uint8_t val);
+
 void instrSetCpuPtr(cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
@@ -110,50 +120,54 @@ void pop_reg16(Register16 reg)
 
 void add8_a_n(uint8_t val)
 {
-    pCpu->reg8.a + val == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-    pCpu->reg8.a + val > UINT8_MAX ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    uint16_t sum = pCpu->reg8.a + val;
 
+    (sum & 0xFF) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     CHECK_HALF_CARRY_ADD8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
     
-    resetFlag(FLAG_N);
+    resetFlag(FLAG_N); // Reset the subtraction flag
 
-    setRegister8(A, (uint8_t)pCpu->reg8.a + val);
+    setRegister8(A, (uint8_t)sum);
 }
 
 void adc8_a_n(uint8_t val)
 {
-    pCpu->reg8.a + val + 1 > UINT8_MAX ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    pCpu->reg8.a + val + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    uint16_t sum = pCpu->reg8.a + val + testFlag(FLAG_C); // Perform addition with carry
 
-    CHECK_HALF_CARRY_ADD8(val + 1, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
-
+    (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    (sum & 0xFF) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    CHECK_HALF_CARRY_ADD8(val + testFlag(FLAG_C), pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
     resetFlag(FLAG_N);
 
-    setRegister8(A, (uint8_t)pCpu->reg8.a + val + 1);
+    setRegister8(A, (uint8_t)sum);
 }
 
 void sub8_n_a(uint8_t val)
 {
+    int16_t result = pCpu->reg8.a - val; // Perform the subtraction
+
+    // Set or reset flags based on the result
+    (result >= 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    CHECK_HALF_CARRY_SUB8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
     setFlag(FLAG_N);
 
-    pCpu->reg8.a - val > 0 ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    pCpu->reg8.a - val == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-
-    CHECK_HALF_CARRY_SUB8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
-
-    setRegister8(A, (uint8_t)(pCpu->reg8.a - val));
+    setRegister8(A, (uint8_t)result); // Store the result in register A
 }
 
 void sbc8_a_n(uint8_t val)
 {
-    setFlag(FLAG_N);
+    uint8_t carry = testFlag(FLAG_C) ? 1 : 0; // Determine if there's a carry from a previous operation
 
-    pCpu->reg8.a - val - 1 > 0 ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    pCpu->reg8.a - val - 1 == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    int16_t result = pCpu->reg8.a - val - carry; // Perform the subtraction with borrow
 
-    CHECK_HALF_CARRY_SUB8(val - 1, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    (result < 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    CHECK_HALF_CARRY_SUB8(val + carry, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    setFlag(FLAG_N); // Always set the subtraction flag
 
-    setRegister8(A, (uint8_t)(pCpu->reg8.a - val - 1));
+    setRegister8(A, (uint8_t)result);
 }
 
 void and8_a_n(uint8_t val)
@@ -191,75 +205,87 @@ void xor8_a_n(uint8_t val)
 
 void cp8_a_n(uint8_t val)
 {
-    setFlag(FLAG_N);
+    setFlag(FLAG_N); // Set the subtraction flag
 
-    pCpu->reg8.a == val ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    (pCpu->reg8.a == val) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 
-    pCpu->reg8.a - val - 1 > 0 ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    CHECK_HALF_CARRY_SUB8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    (pCpu->reg8.a < val) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    // results are thrown away
+    // Check for half-carry
+    CHECK_HALF_CARRY_SUB8(pCpu->reg8.a, val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
+    // Results are thrown away, but flags are set based on comparison
 }
 
 void inc8_reg(Register8 reg)
 {
+    uint8_t value = pCpu->reg8_arr[reg];
+
+    uint8_t result = value + 1;
+    result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_ADD8(pCpu->reg8_arr[reg], 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_ADD8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    pCpu->reg8_arr[reg] + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-
-    setRegister8(reg, (uint8_t)(pCpu->reg8_arr[reg] + 1));
+    setRegister8(reg, result);
 }
 
 void dec8_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_SUB8(pCpu->reg8_arr[reg], 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    uint8_t value = pCpu->reg8_arr[reg];
 
-    pCpu->reg8_arr[reg] - 1 == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    uint8_t result = value - 1;
+    result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    setFlag(FLAG_N);
+    CHECK_HALF_CARRY_SUB8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    setRegister8(reg, (uint8_t)(pCpu->reg8_arr[reg] - 1));
+    setRegister8(reg, result);
 }
 
 void inc8_mem(uint16_t addr)
 {
+    uint8_t value = fetch8(addr);
+
+    uint8_t result = value + 1;
+    result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_ADD8(fetch8(addr), 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_ADD8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    fetch8(addr) + 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-
-    write8(fetch8(addr) + 1, addr);
+    write8(result, addr);
 }
 
 void dec8_mem(uint16_t addr)
 {
-    resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_SUB8(fetch8(addr), 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    uint8_t value = fetch8(addr);
 
-    fetch8(addr) - 1 == 0x100 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    uint8_t result = value - 1;
+    result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    setFlag(FLAG_N); // Set N flag to indicate subtraction
+    CHECK_HALF_CARRY_SUB8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
-    write8(fetch8(addr) - 1, addr);
+    write8(result, addr);
 }
 
 // 16-bit arithmetic
 
 void add16_hl_n(uint16_t val)
 {
+    uint32_t sum = pCpu->reg16.hl + val;
+
+    (sum > UINT16_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    CHECK_HALF_CARRY_ADD16(pCpu->reg16.hl, val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    
     resetFlag(FLAG_N);
 
-    CHECK_HALF_CARRY_ADD16(val + 1, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
-
-    pCpu->reg16.hl + val + 1 > UINT16_MAX ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-
-    setRegister16(HL, (uint16_t)(pCpu->reg16.hl + val));
+    setRegister16(HL, (uint16_t)sum);
 }
 
 void add16_sp_n(uint16_t val)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_Z);
+    uint32_t sum = pCpu->reg16.sp + val;
+    (sum > UINT16_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    setRegister16(SP, (uint16_t)(pCpu->reg16.sp + val));
+    resetFlag(FLAG_N);
+    setRegister16(SP, (uint16_t)sum);
 }
 
 void inc16_reg(Register16 reg)
@@ -277,12 +303,22 @@ void dec16_reg(Register16 reg)
 void swap8_reg(Register8 reg)
 {
     setRegister8(reg, ((pCpu->reg8_arr[reg] & 0x0F) << 4) | ((pCpu->reg8_arr[reg] & 0xF0) >> 4));
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_C);
+    resetFlag(FLAG_H);
+
+    pCpu->reg8_arr[reg] == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
 void swap8_addr(uint16_t addr)
 {
     uint8_t val = fetch8(addr);
     write8(((val & 0x0F) << 4) | ((val & 0xF0) >> 4), addr);
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_C);
+    resetFlag(FLAG_H);
+
+    fetch8(addr) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
 /**
@@ -343,11 +379,9 @@ void scf(void)
  */
 void rlca(void)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8.a & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
-    setRegister8(A, (pCpu->reg8.a << 1 | (testFlag(FLAG_C) & 0x01)));
+    bool zFlag = testFlag(FLAG_Z);
+    setRegister8(A, _rlc(pCpu->reg8.a));
+    if (zFlag) { setFlag(FLAG_Z); }
 }
 
 /**
@@ -357,194 +391,96 @@ void rlca(void)
  */
 void rla(void)
 {
-    rlca();
+    bool zFlag = testFlag(FLAG_Z);
+    setRegister8(A, _rl(pCpu->reg8.a));
+    if (zFlag) { setFlag(FLAG_Z); }
 }
 
 void rrca(void)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8.a & 0x01) { setFlag(FLAG_C); } // get bit 0
-    setRegister8(A, (pCpu->reg8.a >> 1 | pCpu->reg8.a << 7));
-
-    if (pCpu->reg8.a == 0) { setFlag(FLAG_Z); }
+    setRegister8(A, _rrc(pCpu->reg8.a));
 }
 
 void rra(void)
 {
-    uint8_t regVal = pCpu->reg8.a;
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    setRegister8(A, (pCpu->reg8.a >> 1 | testFlag(FLAG_C)));
-
-    if (regVal & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
-
-    if (pCpu->reg8.a == 0) { setFlag(FLAG_Z); }
+    bool zFlag = testFlag(FLAG_Z);
+    setRegister8(A, _rr(pCpu->reg8.a));
+    if (zFlag) { setFlag(FLAG_Z); }
 }
 
 void rlc_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8_arr[reg] & 0x80) { setFlag(FLAG_C); } // get bit 7
-    setRegister8(reg, (pCpu->reg8_arr[reg] << 1 | pCpu->reg8_arr[reg] >> 7));
-
-    if (pCpu->reg8_arr[reg] == 0) { setFlag(FLAG_Z); }
+    setRegister8(reg, _rlc(pCpu->reg8_arr[reg]));
+    if (reg == A)
+    {
+        resetFlag(FLAG_Z);
+    }
 }
 
 void rlc_addr(uint16_t addr)
 {
-    uint8_t val = fetch8(addr);
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7
-    write8((val << 1 | val >> 7), addr);
-
-    if (fetch8(addr) == 0) { setFlag(FLAG_Z); }
+    write8(_rlc(fetch8(addr)), addr);
 }
 
 void rl_reg(Register8 reg)
 {
-    uint8_t regVal = pCpu->reg8_arr[reg];
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    setRegister8(reg, (pCpu->reg8_arr[reg] << 1 | testFlag(FLAG_C)));
-
-    if (regVal & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
-
-    if (pCpu->reg8_arr[reg] == 0) { setFlag(FLAG_Z); }
+    setRegister8(reg, _rl(pCpu->reg8_arr[reg]));
 }
 
 void rl_addr(uint16_t addr)
 {
-    uint8_t val = fetch8(addr);
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    write8(addr, (val << 1 | testFlag(FLAG_C)));
-
-    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
-
-    if (fetch8(addr) == 0) { setFlag(FLAG_Z); }
+    write8(addr, _rl(fetch8(addr)));
 }
 
 void rrc_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8_arr[reg] & 0x80) { setFlag(FLAG_C); } // get bit 7
-    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1 | pCpu->reg8_arr[reg] << 7));
-
-    if (pCpu->reg8_arr[reg] == 0) { setFlag(FLAG_Z); }
+    setRegister8(reg, _rrc(pCpu->reg8_arr[reg]));
 }
 
 void rrc_addr(uint16_t addr)
 {
-    uint8_t val = fetch8(addr);
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0
-    write8((val >> 1 | val << 7), addr);
-
-    if (fetch8(addr) == 0) { setFlag(FLAG_Z); }
+    write8(_rrc(fetch8(addr)), addr);
 }
 
 void rr_reg(Register8 reg)
 {
-    uint8_t regVal = pCpu->reg8_arr[reg];
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1 | testFlag(FLAG_C)));
-
-    if (regVal & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
-
-    if (pCpu->reg8_arr[reg] == 0) { setFlag(FLAG_Z); }
+    setRegister8(reg, _rr(pCpu->reg8_arr[reg]));
 }
 
 void rr_addr(uint16_t addr)
 {
-    uint8_t val = fetch8(addr);
-
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    write8(addr, (val >> 1 | testFlag(FLAG_C)));
-
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 7 of previous value
-
-    if (fetch8(addr) == 0) { setFlag(FLAG_Z); }
+    write8(addr, _rr(fetch8(addr)));
 }
 
 void sla_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8_arr[reg] & 0x80) { setFlag(FLAG_C); }
-
-    setRegister8(reg, pCpu->reg8_arr[reg] << 1);
+    setRegister8(reg, _sla(pCpu->reg8_arr[reg]));
 }
 
 void sla_addr(uint16_t addr)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (fetch8(addr) & 0x80) { setFlag(FLAG_C); }
-
-    write8(fetch8(addr) << 1, addr);
+    write8(addr, _sla(fetch8(addr)));
 }
 
 void sra_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8_arr[reg] & 0x01) { setFlag(FLAG_C); }
-
-    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1) | (pCpu->reg8_arr[reg] & 0x80));
+    setRegister8(reg, _sra(pCpu->reg8_arr[reg]));
 }
 
 void sra_addr(uint16_t addr)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (fetch8(addr) & 0x01) { setFlag(FLAG_C); }
-
-    write8(fetch8(addr) >> 1, addr);
+    write8(_sra(fetch8(addr)), addr);
 }
 
 void srl_reg(Register8 reg)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
-
-    if (pCpu->reg8_arr[reg] & 0x01) { setFlag(FLAG_C); }
-
-    setRegister8(reg, (pCpu->reg8_arr[reg] >> 1) | (pCpu->reg8_arr[reg] & 0x80));
+    setRegister8(reg, _srl(pCpu->reg8_arr[reg]));
 }
 
 void srl_addr(uint16_t addr)
 {
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
 
-    if (fetch8(addr) & 0x01) { setFlag(FLAG_C); }
-
-    write8(fetch8(addr) >> 1, addr);
+    write8(_srl(fetch8(addr)), addr);
 }
 
 // single bit stuff
@@ -623,6 +559,11 @@ void jr_n(int8_t val)
     setRegister16(PC, pCpu->reg16.pc + val);
 }
 
+void jr_n_signed(int8_t val)
+{
+    setRegister16(PC, pCpu->reg16.pc + (signed char)val);
+}
+
 void jr_n_cond(int8_t val, Flag flag, bool testSet)
 {
     if (testFlag(flag))
@@ -635,11 +576,24 @@ void jr_n_cond(int8_t val, Flag flag, bool testSet)
     }
 }
 
+void jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
+{
+    if (testFlag(flag))
+    {
+        if (testSet) { jr_n_signed(val); }
+    }
+    else
+    {
+        if (!testSet) { jr_n_signed(val); }
+    }
+}
+
 // calls
 
 void call_nn(uint16_t val)
 {
     // push return address onto stack
+    // next 2 bytes are the address to call
     pCpu->reg16.sp -= 2;
     write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
     setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
@@ -712,4 +666,131 @@ void reti(void)
 {
     ret();
     changeIME(true);
+}
+
+/**
+ * @brief Rotate Left through Carry
+ * @note  carry becomes 0, and bit 7 is copied to carry
+ * 
+ * @param val 
+ */
+static uint8_t _rl(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    uint8_t ret = (val << 1) | testFlag(FLAG_C);
+    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+/**
+ * @brief Rotate Left Circular
+ * @note  bit 7 is copied to carry and bit 0
+ * @param val value to rotate
+ */
+static uint8_t _rlc(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    uint8_t ret = (val << 1) | testFlag(FLAG_C);
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+/**
+ * @brief Shift Left Arithmetic
+ * @note  leftshift one bit, zero 0, and copy bit 7 to carry
+ * @param val value to shift
+ * @return uint8_t shifted value
+ */
+static uint8_t _sla(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    uint8_t ret = val << 1;
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+/**
+ * @brief Rotate Right through Carry
+ * @note  carry becomes 7, and bit 0 is copied to carry
+ * 
+ * @param val 
+ */
+static uint8_t _rr(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    uint8_t ret = (val >> 1) | (testFlag(FLAG_C) << 7);
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+/**
+ * @brief Rotate Right Circular
+ * @note  bit 0 is copied to carry and bit 7
+ * @param val value to rotate
+ */
+static uint8_t _rrc(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 1 of previous value
+    uint8_t ret = (val >> 1) | (testFlag(FLAG_C) << 7);
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+/**
+ * @brief Shift Right Arithmetic
+ * @note  rightshift one bit without changing sign bit (7), and copy bit 0 to carry
+ * @param val value to shift
+ * @return uint8_t shifted value
+ */
+static uint8_t _sra(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+    uint8_t bit7 = val & 0x80;
+    val &= ~0x80; // unset bit 7
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
+
+    uint8_t ret = (val >> 1) | (bit7 << 7);
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
+}
+
+static uint8_t _srl(uint8_t val)
+{
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_H);
+
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 7 of previous value
+    uint8_t ret = val >> 1;
+
+    if (ret == 0) { setFlag(FLAG_Z); }
+
+    return ret;
 }
