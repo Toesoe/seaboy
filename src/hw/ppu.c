@@ -40,6 +40,10 @@ typedef struct
 } STile_t;
 
 static int cycleCount = 0;
+static int currentColumn = 0;
+static int currentMode3Elapsed = 0;
+static SFIFO_t currentFifo;
+static int fifoCounter = 0;
 
 /**
  * @brief builds current FIFO buffer, 8 pixels
@@ -52,7 +56,7 @@ static SFIFO_t tileFetcher(uint16_t tilemapAddr, uint8_t tileLine)
     // first byte is LSB, second MSB. e.g. addr == 0x3C (00111100b), addr+1 == 0x7E (01111110b):
     // result is 00 10 11 11 11 11 10 00
 
-    SFIFO_t newFifo = {{3, 3, 3, 3, 3, 3, 3, 3}};
+    SFIFO_t newFifo = {8, {3, 3, 3, 3, 3, 3, 3, 3}, 0};
     static uint16_t tileIndex = 0;
 
     uint8_t tileId = fetch8(tilemapAddr + tileIndex);
@@ -87,97 +91,84 @@ bool ppuLoop(int cyclesToRun)
 
     bus_t *pBus = pGetBusPtr();
 
-    if (pBus->map.ioregs.lcd.control.lcdPPUEnable)
+    while (pBus->map.ioregs.lcd.control.lcdPPUEnable && (cyclesToRun-- > 0))
     {
-        size_t winX = pBus->map.ioregs.lcd.wx - 7;
+        // Mode 2 -> Mode 3  -> Mode 0         -> Mode 1
+        // 80     -> 172/289 -> 376 - (Mode 3) -> 4560
 
-        static int mode1Length = 4560;
-        static bool mode3Done = false;
-        static bool mode0Done = false;
-        static int mode0Length = 0;
+        pBus->map.ioregs.lcd.stat.ppuMode = 0x02; // signal Mode 2
 
-        // one line is 456 cycles
-
-        static int currentLineLength = 456;
-        int currentModeOverflow = 0;
-
-        if (currentLineLength >= 376)
+        if (cycleCount < 80)
         {
-            if ((currentLineLength - cyclesToRun) < 376)
-            {
-                currentModeOverflow = 376 - (currentLineLength - cyclesToRun);
-            }
-            cycleCount += cyclesToRun - currentModeOverflow;
-            currentLineLength -= cyclesToRun + currentModeOverflow;
-            pBus->map.ioregs.lcd.stat.ppuMode = 0x02; // signal Mode 2
-
-            // OAM SCAN (mode 2)
-            // Sprite X-Position must be greater than 0
-            // LY + 16 must be greater than or equal to Sprite Y-Position
-            // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in Tall-Sprite-Mode)
-            // The amount of sprites already stored in the OAM Buffer must be less than 10
+            // Mode 2, OAM scan
+            // search for OBJs which overlap line
+            // TODO: implement
+            cycleCount++;
         }
-        if ((currentModeOverflow > 0) ||
-            ((currentLineLength < 376) && (currentModeOverflow == 0)))
+        else if (cycleCount < 65664)
         {
-            // Drawing (mode 3)
-            // here we push stuff to the framebuffer
-            // sprites have prio over bg
-            // first, build tiles
-            // then push to display
-            // TODO implement. for now use 0x9800 as default
-            pBus->map.ioregs.lcd.stat.ppuMode = 0x03; // signal Mode 3
-
-            // check which tilemap to use
-
-
-            for (size_t y = 0; y < LCD_VIEWPORT_Y; y++)
+            if (currentColumn < 160)
             {
-                for (size_t x = 0; x < LCD_VIEWPORT_X; x += (LCD_VIEWPORT_X / PIXEL_FIFO_SIZE))
+                pBus->map.ioregs.lcd.stat.ppuMode = 0x03; // signal Mode 3
+
+                if (currentFifo.len == 0)
                 {
                     uint16_t tileAddr = 0x9800;
                     if (((pBus->map.ioregs.lcd.control.bgTilemap) &&
-                        (x <= winX)) ||
+                        (currentColumn <= (pBus->map.ioregs.lcd.wx - 7))) ||
                         ((pBus->map.ioregs.lcd.control.bgWindowTileMap) &&
-                        (x >= winX)))
+                        (currentColumn >= (pBus->map.ioregs.lcd.wx - 7))))
                     {
                         tileAddr = 0x9C00;
                     }
-                    SFIFO_t currentFifo = tileFetcher(tileAddr, y);
-                    writeFifoToFramebuffer(&currentFifo, x, y);
+                    currentFifo = tileFetcher(tileAddr, pBus->map.ioregs.lcd.ly);
                 }
+
+                // TODO: check SCX
+                uint8_t scxDrop = (pBus->map.ioregs.lcd.scx % 8);
+                if ((scxDrop == 0) || (currentColumn > scxDrop))
+                {
+                    SPixel_t pixel = {currentColumn,  pBus->map.ioregs.lcd.ly, currentFifo.pixels[fifoCounter]};
+                    setPixel(&pixel);
+                }
+                currentFifo.len--;
+                if (currentFifo.len == 0)
+                {
+                    fifoCounter = 0;
+                }
+                else
+                {
+                    fifoCounter++;
+                }
+                currentColumn++;
+                currentMode3Elapsed++;
             }
-            mode3Done = true;
-        }
-
-        if (mode3Done)
-        {
-            if (mode0Length == 0) { mode0Length = currentLineLength; }
-            pBus->map.ioregs.lcd.stat.ppuMode = 0x00; // signal Mode 0, hblank
-
-            // ...
-
-            mode0Done = true;
-        }
-
-        if (mode0Done)
-        {
-            // Vblank (mode 1)
-            pBus->map.ioregs.lcd.stat.ppuMode = 0x01; // signal Mode 1
-
-            if (mode1Length > 0)
+            else if ((currentColumn >= 160) && (currentMode3Elapsed < 456))
             {
-                mode1Length -= cyclesToRun;
+                // Mode 0, hblank
+                pBus->map.ioregs.lcd.stat.ppuMode = 0x00; // signal Mode 0
+                cycleCount++;
+                currentMode3Elapsed++;
             }
             else
             {
-                frameEnd = true;
-                mode3Done = false;
-                mode0Done = false;
-                mode0Length = 0;
-                mode1Length = 4560;
-                currentLineLength = 476;
+                // line is done.
+                currentColumn = 0;
+                pBus->map.ioregs.lcd.ly++;
+                currentMode3Elapsed = 0;
             }
+        }
+        else if (cycleCount < CYCLES_PER_FRAME)
+        {
+            // Mode 1, vblank, do nothing at all
+            cycleCount++;
+        }
+        else
+        {
+            // frame done
+            frameEnd = true;
+            cycleCount = 0;
+            currentMode3Elapsed = 0;
         }
     }
 

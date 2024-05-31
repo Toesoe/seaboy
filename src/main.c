@@ -210,10 +210,13 @@ size_t bootrom_bin_len = 0xFF;
 
 int main()
 {
+    //renderWindow();
     bus_t *pBus = pGetBusPtr();
     const cpu_t *pCpu = getCpuObject();
 
     bool instrHit[255] = {0};
+
+    bool hit68 = false;
 
     uint16_t highestPc = 0;
 
@@ -244,9 +247,18 @@ int main()
             //debugFramebuffer();
         }
 
-        if (pCpu->reg16.pc == 0xE0)
+        if (pCpu->reg16.pc == 0x68)
         {
-            debugFramebuffer();
+            hit68 = true;
+            //debugFramebuffer();
+        }
+
+        if (hit68 && ((pCpu->reg16.pc < 0x64) || (pCpu->reg16.pc > 0x68)))
+        {
+            if (pCpu->reg16.pc == 0x6b)
+            {
+                __asm("nop");
+            }
         }
     }
 }

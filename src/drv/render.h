@@ -13,6 +13,7 @@
 #define _RENDER_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdbool.h>
 
 #include "../hw/ppu.h"
@@ -27,7 +28,10 @@ typedef struct {
 } SPixel_t;
 
 void writeFifoToFramebuffer(SFIFO_t *, uint8_t, uint8_t);
+void setPixel(SPixel_t *);
 
 void debugFramebuffer(void);
+
+void renderWindow(void);
 
 #endif //!_RENDER_H_

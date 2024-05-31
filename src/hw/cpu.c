@@ -417,7 +417,6 @@ static int decodeCbPrefix()
     return addCycles;
 }
 
-// TODO: add cycle counts, use this to execute PPU cycles
 int executeInstruction(uint8_t instr)
 {
     bool is16 = false;

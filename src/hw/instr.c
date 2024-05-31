@@ -54,7 +54,7 @@ void ld_reg8_reg8(Register8 left, Register8 right)
 
 void ld_addr_reg8(uint16_t addr, Register8 right)
 {
-    write8(addr, pCpu->reg8_arr[right]);
+    write8(pCpu->reg8_arr[right], addr);
 }
 
 void ld_addr_imm(uint16_t addr, uint8_t val)
@@ -138,6 +138,7 @@ void adc8_a_n(uint8_t val)
     (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     (sum & 0xFF) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     CHECK_HALF_CARRY_ADD8(val + testFlag(FLAG_C), pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
     resetFlag(FLAG_N);
 
     setRegister8(A, (uint8_t)sum);
@@ -145,15 +146,15 @@ void adc8_a_n(uint8_t val)
 
 void sub8_n_a(uint8_t val)
 {
-    int16_t result = pCpu->reg8.a - val; // Perform the subtraction
+    int16_t result = pCpu->reg8.a - val;
 
-    // Set or reset flags based on the result
     (result >= 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     CHECK_HALF_CARRY_SUB8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
     setFlag(FLAG_N);
 
-    setRegister8(A, (uint8_t)result); // Store the result in register A
+    setRegister8(A, (uint8_t)result);
 }
 
 void sbc8_a_n(uint8_t val)
@@ -165,6 +166,7 @@ void sbc8_a_n(uint8_t val)
     (result < 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     CHECK_HALF_CARRY_SUB8(val + carry, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
     setFlag(FLAG_N); // Always set the subtraction flag
 
     setRegister8(A, (uint8_t)result);

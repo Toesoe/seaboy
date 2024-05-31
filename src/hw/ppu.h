@@ -13,6 +13,7 @@
 #define _PPU_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdbool.h>
 
 typedef enum {
@@ -24,7 +25,9 @@ typedef enum {
 
 typedef struct
 {
+    size_t len;
     ETilePalette_t pixels[8];
+    size_t discardLeft;
 } SFIFO_t;
 
 void buildTiles(uint32_t);

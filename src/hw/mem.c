@@ -32,11 +32,19 @@ uint16_t fetch16(uint16_t addr)
 
 void write8(uint8_t val, uint16_t addr)
 {
+    if (addr < ROMN_SIZE)
+    {
+        __asm("nop");
+    }
     addressBus.bus[addr] = val;
 }
 
 void write16(uint16_t val, uint16_t addr)
 {
+    if (addr < ROMN_SIZE)
+    {
+        __asm("nop");
+    }
     addressBus.bus[addr]     = (uint8_t)(val & 0xFF);
     addressBus.bus[addr + 1] = (uint8_t)(val >> 8);
 }

@@ -13,6 +13,8 @@
 #include <string.h>
 #include <wchar.h>
 
+#include "SDL2/SDL.h"
+
 #include "render.h"
 
 static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
@@ -24,7 +26,12 @@ static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
  */
 void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
 {
-    memcpy(&framebuffer[y][xStart], pFifo->pixels, 8);
+    memcpy(&framebuffer[y][xStart], &pFifo->pixels[pFifo->discardLeft], 8 - pFifo->discardLeft);
+}
+
+void setPixel(SPixel_t *pPixel)
+{
+    framebuffer[pPixel->y][pPixel->x] = pPixel->color;
 }
 
 void debugFramebuffer(void)
@@ -37,6 +44,23 @@ void debugFramebuffer(void)
         }
         printf("\n");
     }
+}
+
+void renderWindow(void)
+{
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
+        // failure
+    }
+
+    SDL_Window *pWin = SDL_CreateWindow("SDL2 Window",
+                                          SDL_WINDOWPOS_CENTERED,
+                                          SDL_WINDOWPOS_CENTERED,
+                                          680, 480,
+                                          0);
+
+    SDL_UpdateWindowSurface(pWin);
+    SDL_Delay(5000);
 }
 
 // TODO: implement SDL for rendering games
