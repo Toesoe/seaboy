@@ -1,14 +1,14 @@
 builddir = build
 srcdir = src
 cflags  = -Wall -Werror -Wextra -Wshadow -fanalyzer  -std=c2x
-ldflags = -g -ggdb -lgcc -lm -ISDL2 -L./lib -lSDL2
+ldflags = -g -ggdb -lgcc -lm -lSDL2
 
 rule cc
     command = gcc $ldflags $cflags -c $in -o $out
     description = CC $out
 
 rule link
-    command = gcc $ldflags -o $out $in
+    command = gcc $in $ldflags -o $out 
     description = LINK $out
 
 build $builddir/main.o: cc $srcdir/main.c

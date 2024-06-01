@@ -468,7 +468,7 @@ int executeInstruction(uint8_t instr)
         case 0x16: // LD D,d8
         case 0x26: // LD H,d8
         {
-            Register8 reg = getRegisterIndexByOpcodeNibble(lo - 6); // use low nibble
+            Register8 reg = reg = ((hi == 1) ? D : ((hi == 2) ? H : B));
             ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
             cycleCount = 2;
             break;
@@ -503,7 +503,7 @@ int executeInstruction(uint8_t instr)
         case 0x1E: // LD E,d8
         case 0x2E: // LD L,d8
         {
-            Register8 reg = getRegisterIndexByOpcodeNibble(lo - 0x0E + 1); // use low nibble
+            Register8 reg = ((hi == 1) ? E : ((hi == 2) ? L : C));
             ld_reg8_imm(reg, fetch8(++cpu.reg16.pc));
             cycleCount = 2;
             break;
@@ -559,7 +559,7 @@ int executeInstruction(uint8_t instr)
         case 0x1D: // DEC E
         case 0x2D: // DEC L
         {
-            Register8 reg = getRegisterIndexByOpcodeNibble(hi + 1); // use high nibble
+            Register8 reg = ((hi == 1) ? E : ((hi == 2) ? L : C));
             if (lo == 0x0C) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
             cycleCount = 1;
@@ -580,7 +580,7 @@ int executeInstruction(uint8_t instr)
         case 0x15: // DEC D
         case 0x25: // DEC H
         {
-            Register8 reg = getRegisterIndexByOpcodeNibble(hi); // use high nibble
+            Register8 reg = ((hi == 1) ? D : ((hi == 2) ? H : B));
             if (lo == 0x04) { inc8_reg(reg); }
             else            { dec8_reg(reg); }
             cycleCount = 1;

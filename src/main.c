@@ -221,6 +221,7 @@ int main()
     uint16_t highestPc = 0;
 
     resetCpu();
+    ppuInit();
 
     memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len);
 
@@ -245,20 +246,6 @@ int main()
         if (isFrameEnd)
         {
             //debugFramebuffer();
-        }
-
-        if (pCpu->reg16.pc == 0x68)
-        {
-            hit68 = true;
-            //debugFramebuffer();
-        }
-
-        if (hit68 && ((pCpu->reg16.pc < 0x64) || (pCpu->reg16.pc > 0x68)))
-        {
-            if (pCpu->reg16.pc == 0x6b)
-            {
-                __asm("nop");
-            }
         }
     }
 }
