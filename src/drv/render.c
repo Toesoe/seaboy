@@ -17,7 +17,33 @@
 
 #include "render.h"
 
+ETilePalette_t example_data[DISP_HEIGHT][DISP_WIDTH] = {
+    {BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY},
+    {WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK},
+    {LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE},
+    {DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY},
+    {BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY},
+    {WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK},
+    {LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE},
+    {DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY}
+};
+
 static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
+static uint32_t       pixelbuffer[DISP_WIDTH * DISP_HEIGHT];
+
+static SDL_Window *g_pRenderWindow = NULL;
+static SDL_Renderer *g_pRenderer = NULL;
+static SDL_Texture *g_pFbTexture = NULL;
+
+static uint32_t map_palette_to_rgba(ETilePalette_t color) {
+    switch (color) {
+        case BLACK: return 0x000000FF; // Black
+        case LGRAY: return 0xBFBFBFFF; // Light Gray
+        case DGRAY: return 0x7F7F7FFF; // Dark Gray
+        case WHITE: return 0xFFFFFFFF; // White
+        default:    return 0x000000FF; // Default to black
+    }
+}
 
 /**
  * @brief set a pixel value at a specific screen x/y location
@@ -26,41 +52,85 @@ static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
  */
 void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
 {
+    // Ensure bounds checking
+    if (xStart + 8 > DISP_WIDTH || y >= DISP_HEIGHT) return;
+
+    // Copy pixel data from FIFO to framebuffer
     memcpy(&framebuffer[y][xStart], &pFifo->pixels[pFifo->discardLeft], 8 - pFifo->discardLeft);
 }
 
 void setPixel(SPixel_t *pPixel)
 {
+    // Ensure bounds checking
+    if (pPixel->x >= DISP_WIDTH || pPixel->y >= DISP_HEIGHT) return;
+
+    // Set pixel value in framebuffer
     framebuffer[pPixel->y][pPixel->x] = pPixel->color;
 }
 
 void debugFramebuffer(void)
 {
-    for (size_t y = 0; y < DISP_HEIGHT; y++)
-    {
-        for (size_t x = 0; x < DISP_WIDTH; x++)
-        {
-            printf("%c", framebuffer[y][x] == 3 ? '.' : ' ');
+    // Update pixelbuffer from framebuffer
+    for (int y = 0; y < DISP_HEIGHT; ++y) {
+        for (int x = 0; x < DISP_WIDTH; ++x) {
+            pixelbuffer[y * DISP_WIDTH + x] = map_palette_to_rgba(framebuffer[y][x]);
         }
-        printf("\n");
     }
+
+    // Update texture with pixelbuffer data
+    if (SDL_UpdateTexture(g_pFbTexture, NULL, pixelbuffer, DISP_WIDTH * sizeof(uint32_t)) != 0)
+    {
+        // Error handling
+        fprintf(stderr, "Texture SDL_Error: %s\n", SDL_GetError());
+    }
+
+    // Render texture onto window
+    SDL_RenderCopy(g_pRenderer, g_pFbTexture, NULL, NULL);
+    SDL_RenderPresent(g_pRenderer);
 }
 
-void renderWindow(void)
+void initRenderWindow(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        // failure
+        // Error handling
+        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
     }
 
-    SDL_Window *pWin = SDL_CreateWindow("SDL2 Window",
-                                          SDL_WINDOWPOS_CENTERED,
-                                          SDL_WINDOWPOS_CENTERED,
-                                          680, 480,
-                                          0);
+    g_pRenderWindow = SDL_CreateWindow("Framebuffer Example",
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          DISP_WIDTH * 4,
+                                          DISP_HEIGHT * 4,
+                                          SDL_WINDOW_SHOWN);
 
-    SDL_UpdateWindowSurface(pWin);
-    SDL_Delay(5000);
+    if (!g_pRenderWindow) {
+        fprintf(stderr, "Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
+
+    g_pRenderer = SDL_CreateRenderer(g_pRenderWindow, -1, SDL_RENDERER_ACCELERATED);
+
+    if (!g_pRenderer) {
+        fprintf(stderr, "Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_DestroyWindow(g_pRenderWindow);
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
+
+    //SDL_RenderSetLogicalSize(g_pRenderer, DISP_WIDTH * 4, DISP_HEIGHT * 4);
+
+    g_pFbTexture = SDL_CreateTexture(g_pRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 160, 144);
+
+    if (!g_pFbTexture) {
+        fprintf(stderr, "Texture could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_DestroyRenderer(g_pRenderer);
+        SDL_DestroyWindow(g_pRenderWindow);
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
+
+    memset(pixelbuffer, 0xFFFFFFFF, DISP_WIDTH * DISP_HEIGHT * sizeof(uint32_t));
 }
-
-// TODO: implement SDL for rendering games

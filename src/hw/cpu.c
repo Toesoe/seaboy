@@ -454,13 +454,15 @@ int executeInstruction(uint8_t instr)
         }
         case 0x22: // LD (HL+),A
         {
-            write8(cpu.reg8.a, cpu.reg16.hl++);
+            write8(cpu.reg8.a, cpu.reg16.hl);
+            cpu.reg16.hl++;
             cycleCount = 2;
             break;
         }
         case 0x32: // LD (HL-),A
         {
-            write8(cpu.reg8.a, cpu.reg16.hl--);
+            write8(cpu.reg8.a, cpu.reg16.hl);
+            cpu.reg16.hl--;
             cycleCount = 2;
             break;
         }
@@ -475,7 +477,7 @@ int executeInstruction(uint8_t instr)
         }
         case 0x36: // LD (HL),d8
         {
-            write8(++cpu.reg16.pc, cpu.reg16.hl);
+            write8(fetch8(++cpu.reg16.pc), cpu.reg16.hl);
             cycleCount = 3;
             break;
         }
@@ -676,7 +678,7 @@ int executeInstruction(uint8_t instr)
         case 0xC3: // JP a16
         {
             jmp_nn(fetch16(cpu.reg16.pc + 1));
-            cpu.reg16.pc += 2;
+            cpu.reg16.pc--;
             cycleCount = 4;
             break;
         }
@@ -837,7 +839,7 @@ int executeInstruction(uint8_t instr)
                 {
                     regL  = (lo <= 0x07) ? D : E;
                     
-                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    if (lo == 0x06 || lo == 0x0E)
                     {
                         hl = true;
                     }
@@ -855,7 +857,7 @@ int executeInstruction(uint8_t instr)
                 {
                     regL  = (lo <= 0x07) ? H : L;
                     
-                    if ((lo | ~0x06) == ~0) // middle 2 bits: 0x6 or 0xE == (HL)
+                    if (lo == 0x06 || lo == 0x0E)
                     {
                         hl = true;
                     }

@@ -32,6 +32,7 @@ void setPixel(SPixel_t *);
 
 void debugFramebuffer(void);
 
+void initRenderWindow(void);
 void renderWindow(void);
 
 #endif //!_RENDER_H_

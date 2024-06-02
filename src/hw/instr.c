@@ -381,42 +381,31 @@ void scf(void)
  */
 void rlca(void)
 {
-    bool zFlag = testFlag(FLAG_Z);
     setRegister8(A, _rlc(pCpu->reg8.a));
-    if (zFlag) { setFlag(FLAG_Z); }
+    resetFlag(FLAG_Z);
 }
 
-/**
- * @brief 0x17, rotate left accumulator
- * @note  bit 7 goes to carry and 0. functionally identical to rlca
- * 
- */
 void rla(void)
 {
-    bool zFlag = testFlag(FLAG_Z);
     setRegister8(A, _rl(pCpu->reg8.a));
-    if (zFlag) { setFlag(FLAG_Z); }
+    resetFlag(FLAG_Z);
 }
 
 void rrca(void)
 {
     setRegister8(A, _rrc(pCpu->reg8.a));
+    resetFlag(FLAG_Z);
 }
 
 void rra(void)
 {
-    bool zFlag = testFlag(FLAG_Z);
     setRegister8(A, _rr(pCpu->reg8.a));
-    if (zFlag) { setFlag(FLAG_Z); }
+    resetFlag(FLAG_Z);
 }
 
 void rlc_reg(Register8 reg)
 {
     setRegister8(reg, _rlc(pCpu->reg8_arr[reg]));
-    if (reg == A)
-    {
-        resetFlag(FLAG_Z);
-    }
 }
 
 void rlc_addr(uint16_t addr)
@@ -712,12 +701,15 @@ static uint8_t _rl(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    uint8_t ret = (val << 1) | testFlag(FLAG_C);
-    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    bool toggleFlag = val & 0x80;
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    val <<= 1;
+    val |= testFlag(FLAG_C);
+    toggleFlag ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    return ret;
+    if (val == 0) { setFlag(FLAG_Z); }
+
+    return val;
 }
 
 /**
@@ -768,12 +760,15 @@ static uint8_t _rr(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    uint8_t ret = (val >> 1) | (testFlag(FLAG_C) << 7);
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
+    bool toggleFlag = val & 0x01;
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    val >>= 1;
+    val |= (testFlag(FLAG_C) << 7);
+    toggleFlag ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    return ret;
+    if (val == 0) { setFlag(FLAG_Z); }
+
+    return val;
 }
 
 /**
@@ -786,8 +781,8 @@ static uint8_t _rrc(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 1 of previous value
-    uint8_t ret = (val >> 1) | (testFlag(FLAG_C) << 7);
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 7 of previous value
+    uint8_t ret = (val << 1) | (testFlag(FLAG_C) >> 7);
 
     if (ret == 0) { setFlag(FLAG_Z); }
 

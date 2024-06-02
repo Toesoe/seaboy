@@ -14,6 +14,8 @@
 #include "hw/ppu.h"
 #include "drv/render.h"
 
+#include "../tetris.h"
+
 #include <string.h>
 #include <stdio.h>
 
@@ -216,17 +218,17 @@ int main()
 
     bool instrHit[255] = {0};
 
-    bool hit68 = false;
-
     uint16_t highestPc = 0;
 
     resetCpu();
     ppuInit();
+    initRenderWindow();
 
-    memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len);
+    // copy cart to busmem
+    memcpy(&pBus->map.rom0, &Tetris_gb[0], Tetris_gb_len + 1);
 
-    // copy tiles to cart as well for testing
-    memcpy(&pBus->bus[0x104], &bootrom_bin[0xA8], 48);
+    // overlay with bootrom
+    memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len + 1);
 
     while(true)
     {
@@ -239,13 +241,19 @@ int main()
 
         printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
 
+        if (pCpu->reg16.pc == 0xFE)
+        {
+            __asm("nop");
+        }
         int ppuCycles = executeInstruction(pBus->bus[pCpu->reg16.pc]) * 4; // ppu runs 4x faster
 
-        bool isFrameEnd = ppuLoop(ppuCycles); // 1 CPU cycle = 4 PPU cycles
-
-        if (isFrameEnd)
+        if (pBus->map.ioregs.disableBootrom)
         {
-            //debugFramebuffer();
+            // remove bootrom overlay
+            memcpy(&pBus->bus[0], &Tetris_gb[0], bootrom_bin_len + 1);
+            pBus->map.ioregs.disableBootrom = 0;
         }
+
+        ppuLoop(ppuCycles); // 1 CPU cycle = 4 PPU cycles
     }
 }

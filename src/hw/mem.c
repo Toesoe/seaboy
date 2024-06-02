@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 static bus_t addressBus;
 
@@ -32,9 +33,13 @@ uint16_t fetch16(uint16_t addr)
 
 void write8(uint8_t val, uint16_t addr)
 {
-    if (addr < ROMN_SIZE)
+    if (addr < (ROMN_SIZE * 2))
     {
         __asm("nop");
+    }
+    else if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
+    {
+        printf("VRAM WRITE %02X at %04X\n", val, addr);
     }
     addressBus.bus[addr] = val;
 }

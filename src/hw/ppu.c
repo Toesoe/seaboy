@@ -10,6 +10,7 @@
  */
 
 #include <string.h>
+#include <stdio.h>
 
 #include "ppu.h"
 #include "mem.h"
@@ -53,7 +54,7 @@ typedef struct
 {
     EPPUMode_t mode;
     int cycleCount;
-    int mode3CyclesElapsed;
+    int currentLineCycleCount;
     uint8_t column;
     uint8_t row;
     SFIFO_t pixelFifo;
@@ -66,51 +67,55 @@ static bus_t *g_pMemoryBus = NULL;
  * @brief builds current FIFO buffer, 8 pixels
  * 
  * @param lx current X position
- * @param tileLine "window Y"
  */
-static void fillPixelFifo(uint8_t lx, uint8_t tileLine)
+static void fillPixelFifo(uint8_t lx)
 {
-    (void)tileLine;
-    // a tile consists of 8x8 pixels, but is stored in 16 bytes
-    // first byte is LSB, second MSB. e.g. addr == 0x3C (00111100b), addr+1 == 0x7E (01111110b):
-    // result is 00 10 11 11 11 11 10 00
+    bool isWindow = false;
+    uint8_t adjustedScanline = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) % 256;
 
-    uint16_t tileAddr = 0b1001100000000000;
-    uint16_t tileRow = 0b1000000000000000;
+    if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowEnable) {
+        uint8_t windowEnd = g_pMemoryBus->map.ioregs.lcd.wy + ((g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileMap ? 4 : 3) << 3);
+        if ((g_pMemoryBus->map.ioregs.lcd.ly >= g_pMemoryBus->map.ioregs.lcd.wy) &&
+             g_pMemoryBus->map.ioregs.lcd.ly < windowEnd) {
+            isWindow = true;
+        }
+    }
 
-    // bg mode
-    tileAddr = (tileAddr & ~(1 << 10)) | (g_pMemoryBus->map.ioregs.lcd.control.bgTilemap << 10);
+    uint16_t tileMapBase = ((g_pMemoryBus->map.ioregs.lcd.control.bgTilemap && !isWindow) || (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileMap && isWindow)) ? 0x9C00 : 0x9800;
+    uint16_t tileAddr = tileMapBase;
 
-    uint8_t tmp = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) / 8;
-    tileAddr = (tileAddr & ~(0b11111 << 5)) | (tmp << 5);
+    if (!isWindow) {
+        uint8_t row = (adjustedScanline / 8);
+        uint8_t col = ((lx + g_pMemoryBus->map.ioregs.lcd.scx) / 8);
+        tileAddr += (row * 32) + col;
+        //printf("BG Mode - TileMapBase: %04X, Row: %d, Col: %d, TileAddr: %04X\n", tileMapBase, row, col, tileAddr);
+    } else {
+        uint8_t row = ((g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) / 8);
+        uint8_t col = (lx / 8);
+        tileAddr += (row * 32) + col;
+        //printf("Window Mode - TileMapBase: %04X, Row: %d, Col: %d, TileAddr: %04X\n", tileMapBase, row, col, tileAddr);
+    }
 
-    tmp = (lx + g_pMemoryBus->map.ioregs.lcd.scx) / 8;
-    tileAddr = (tileAddr & ~0b11111) | tmp;
-
-    // window mode
-    // tileAddr = (tileAddr & ~(1 << 10)) | (1 << 10);
-
-    // uint8_t tmp = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) / 8;
-    // tileAddr = (tileAddr & ~(0b11111 << 5)) | (tmp << 5);
-
-    // tileAddr = (tileAddr & ~0b11111) | (tileLine / 8);
 
     uint8_t tileId = fetch8(tileAddr);
 
-    // only BG for now
-    tileRow = (tileRow & ~(1 << 12)) | (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData << 12);
-    tileRow = (tileRow & ~(255 << 4)) | (tileId << 4);
+    // Debug: Print the fetched tile ID
+    //printf("Tile ID at (lx=%d, ly=%d): %02X\n", lx, g_pMemoryBus->map.ioregs.lcd.ly, tileId);
 
-    uint8_t tmp2 = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) % 8;
-    tileRow = (tileRow & ~(0b111 << 1)) | (tmp2 << 4);
+    uint16_t tileRowAddr = g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData ? 0x8000 : 0x8800;
+    tileRowAddr += tileId * 16; // Each tile occupies 16 bytes (8x8 pixels)
 
-    uint8_t lsb = fetch8(tileRow);
-    uint8_t msb = fetch8(tileRow + 1);
+    uint8_t lsb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2);
+    uint8_t msb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2 + 1);
 
-    for (size_t i = 0; i < PIXEL_FIFO_SIZE; i++)
-    {
-        g_currentPPUState.pixelFifo.pixels[i] = (lsb & (1 << i)) ? 1 : 0;
-        g_currentPPUState.pixelFifo.pixels[i] |= ((msb & (1 << i)) ? 2 : 0);
+    // Debug: Print the fetched tile data
+    //printf("Tile data at (addr=%04X): LSB=%02X, MSB=%02X\n", tileRowAddr + (adjustedScanline % 8) * 2, lsb, msb);
+
+    for (size_t i = 0; i < PIXEL_FIFO_SIZE; i++) {
+        uint8_t pixel = 0;
+        pixel |= ((msb & (1 << (7 - i))) ? 2 : 0); // Combine MSB
+        pixel |= ((lsb & (1 << (7 - i))) ? 1 : 0); // Combine LSB
+        g_currentPPUState.pixelFifo.pixels[i] = pixel;
     }
 
     g_currentPPUState.pixelFifo.len = PIXEL_FIFO_SIZE;
@@ -144,9 +149,9 @@ bool ppuLoop(int cyclesToRun)
                 // OAM scan
                 // search for OBJs which overlap line
                 // TODO: implement
-                g_currentPPUState.cycleCount++;
 
-                if (g_currentPPUState.cycleCount == 80)
+                g_currentPPUState.currentLineCycleCount++;
+                if (g_currentPPUState.currentLineCycleCount == 80)
                 {
                     g_currentPPUState.mode = MODE_3;
                 }
@@ -156,14 +161,13 @@ bool ppuLoop(int cyclesToRun)
             {
                 if (g_currentPPUState.column < 160)
                 {
-                    // TODO: check SCX
                     SPixel_t pixel = {g_currentPPUState.column, g_pMemoryBus->map.ioregs.lcd.ly, g_currentPPUState.pixelFifo.pixels[PIXEL_FIFO_SIZE - g_currentPPUState.pixelFifo.len]};
                     setPixel(&pixel);
 
                     g_currentPPUState.pixelFifo.len--;
 
                     g_currentPPUState.column++;
-                    g_currentPPUState.mode3CyclesElapsed++;
+                    g_currentPPUState.currentLineCycleCount++;
                 }
                 else
                 {
@@ -173,45 +177,61 @@ bool ppuLoop(int cyclesToRun)
             }
             case MODE_0: // Hblank for remaining cycles until we hit 456
             {
-                g_currentPPUState.cycleCount++;
-                g_currentPPUState.mode3CyclesElapsed++;
+                g_currentPPUState.currentLineCycleCount++;
 
-                if (g_currentPPUState.mode3CyclesElapsed == 456)
+                if (g_currentPPUState.currentLineCycleCount == 456)
                 {
                     // line is done. reset counters
                     g_currentPPUState.column = 0;
                     g_pMemoryBus->map.ioregs.lcd.ly++;
-                    g_currentPPUState.mode3CyclesElapsed = 0;
+                    g_currentPPUState.currentLineCycleCount = 0;
 
-                    // go to Vblank if we processed the last line
                     if (g_pMemoryBus->map.ioregs.lcd.ly == LCD_VIEWPORT_Y)
                     {
+                        // go to Vblank if we processed the last line
                         g_currentPPUState.mode = MODE_1;
+                    }
+                    else
+                    {
+                        // if not, go back to OAM scan
+                        g_currentPPUState.mode = MODE_2;
                     }
                 }
                 break;
             }
-            case MODE_1: // Vblank for the remaining cycles
+            case MODE_1: // Vblank for the remaining lines
             {
-                g_currentPPUState.cycleCount++;
-
-                if (g_currentPPUState.cycleCount >= CYCLES_PER_FRAME)
+                if (g_currentPPUState.cycleCount < CYCLES_PER_FRAME)
+                {
+                    if (g_currentPPUState.currentLineCycleCount == 456)
+                    {
+                        // end of line, increase ly
+                        g_pMemoryBus->map.ioregs.lcd.ly++;
+                        g_currentPPUState.currentLineCycleCount = 0;
+                    }
+                    g_currentPPUState.currentLineCycleCount++;
+                }
+                else
                 {
                     frameEnd = true;
-                    g_currentPPUState.cycleCount = 0;
+                    debugFramebuffer();
                     g_currentPPUState.mode = MODE_2;
-                    g_pMemoryBus->map.ioregs.lcd.stat.ppuMode = MODE_2;
+                    g_currentPPUState.currentLineCycleCount = 0;
+                    g_pMemoryBus->map.ioregs.lcd.ly = 0;
+                    g_currentPPUState.cycleCount = 0;
                 }
+                
                 break;
             }
         }
 
         if (g_currentPPUState.pixelFifo.len == 0)
         {
-            fillPixelFifo(g_currentPPUState.column, 0);
+            fillPixelFifo(g_currentPPUState.column);
         }
 
         cyclesToRun--;
+        g_currentPPUState.cycleCount++;
     }
 
     g_pMemoryBus->map.ioregs.lcd.stat.ppuMode = g_currentPPUState.mode;
