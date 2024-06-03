@@ -58,3 +58,9 @@ dkms.conf
 # vscode stuff
 .vscode/
 build/
+
+# roms
+*.gb
+gb-test-roms-master
+mts
+src/instructions

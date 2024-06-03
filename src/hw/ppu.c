@@ -37,14 +37,6 @@
 
 #define CYCLES_PER_FRAME 70224 // 154 scanlines * 456 cycle
 
-typedef enum
-{
-    MODE_0, // Hblank
-    MODE_1, // Vblank
-    MODE_2, // OAM
-    MODE_3  // drawing
-} EPPUMode_t;
-
 typedef struct
 {
     SPixel_t pixels[TILE_DIM_X][TILE_DIM_Y];
@@ -201,6 +193,7 @@ bool ppuLoop(int cyclesToRun)
             }
             case MODE_1: // Vblank for the remaining lines
             {
+                g_pMemoryBus->map.ioregs.intFlags.vblank = 1;
                 if (g_currentPPUState.cycleCount < CYCLES_PER_FRAME)
                 {
                     if (g_currentPPUState.currentLineCycleCount == 456)

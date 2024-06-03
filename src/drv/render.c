@@ -37,11 +37,11 @@ static SDL_Texture *g_pFbTexture = NULL;
 
 static uint32_t map_palette_to_rgba(ETilePalette_t color) {
     switch (color) {
-        case BLACK: return 0x000000FF; // Black
-        case LGRAY: return 0xBFBFBFFF; // Light Gray
-        case DGRAY: return 0x7F7F7FFF; // Dark Gray
-        case WHITE: return 0xFFFFFFFF; // White
-        default:    return 0x000000FF; // Default to black
+        case BLACK: return 0x0f380fFF; // Black
+        case LGRAY: return 0x8bac0fFF; // Light Gray
+        case DGRAY: return 0x306230FF; // Dark Gray
+        case WHITE: return 0x9bbc0fFF; // White
+        default:    return 0x9bbc0fFF; // Default to black
     }
 }
 

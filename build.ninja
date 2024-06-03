@@ -27,7 +27,11 @@ build $builddir/drv_audio.o: cc $srcdir/drv/audio.c
 build $builddir/drv_input.o: cc $srcdir/drv/input.c
 build $builddir/drv_render.o: cc $srcdir/drv/render.c
 
+build $builddir/test_cJSON.o: cc $srcdir/cJSON.c
+build $builddir/test_cputest.o: cc $srcdir/cputest.c
+
 build $builddir/seaboy: link $builddir/main.o $builddir/hw_cpu.o $
     $builddir/hw_cpu_instr.o $builddir/hw_cart.o $builddir/hw_joypad.o $
     $builddir/hw_snd.o $builddir/drv_audio.o $builddir/drv_input.o $
-    $builddir/drv_render.o $builddir/hw_ppu.o $builddir/hw_mem.o
+    $builddir/drv_render.o $builddir/hw_ppu.o $builddir/hw_mem.o $
+    $builddir/test_cJSON.o $builddir/test_cputest.o

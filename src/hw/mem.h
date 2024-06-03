@@ -13,6 +13,7 @@
 #define _MEM_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define GB_BUS_SIZE     0x10000
 
@@ -86,6 +87,16 @@ typedef struct __attribute__((__packed__)) {
     uint8_t id3 : 2;
 } SRegPaletteData_t;
 
+typedef struct __attribute__((__packed__))
+{
+    uint8_t vblank : 1; //0
+    uint8_t lcd : 1; //1
+    uint8_t timer : 1; //2
+    uint8_t serial : 1; //3
+    uint8_t joypad : 1; //4
+    uint8_t _none : 3; //567
+} SInterruptFlags_t;
+
 typedef union __attribute__((__packed__))
 {
     uint8_t bus[GB_BUS_SIZE];
@@ -106,7 +117,7 @@ typedef union __attribute__((__packed__))
                 uint8_t map1[TILEMAP_SIZE];     // 0x9C00 -> 0x9FFF
             } tiles;
         } vram;
-        uint8_t eram[ERAM_SIZE];    // 0xA000 -> 0xBFFF
+        uint8_t eram[ERAM_SIZE];    // 0xA000 -> 0xBFFF: not handled directly here
         union __attribute__((__packed__))
         {
             uint8_t all[WRAM_SIZE]; // 0xC000 -> 0xCFFF
@@ -128,7 +139,7 @@ typedef union __attribute__((__packed__))
             uint8_t divRegister;    // 0xFF04
             STimers_t timers;       // 0xFF05 -> 0xFF07
             uint8_t _padding2[8];   // 0xFF08 -> 0xFF0E
-            uint8_t intFlag;        // 0xFF0F
+            SInterruptFlags_t intFlags; // 0xFF0F
             uint8_t audio[22];      // 0xFF10 -> 0xFF26
             uint8_t _padding3[10];  // 0xFF27 -> 0xFF2F
             uint8_t wavepattern[0xF]; // 0xFF30 -> 0xFF3F
@@ -153,11 +164,13 @@ typedef union __attribute__((__packed__))
             uint8_t _unusedForNow[0x2F]; // 0xFF51 -> 0xFF7F
         } ioregs;
         uint8_t hram[HRAM_SIZE];    // 0xFF80 -> 0xFFFE
-        uint8_t interruptEnable;    // 0xFFFF
+        SInterruptFlags_t interruptEnable;    // 0xFFFF
     } map;
 } bus_t;
 
-void resetBus(void);
+void resetBus();
+void mapRomIntoMem(uint8_t **, size_t);
+void unmapBootrom(void);
 
 uint8_t  fetch8(uint16_t);
 uint16_t fetch16(uint16_t);

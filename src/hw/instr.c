@@ -89,7 +89,7 @@ void ldh_offset_mem_a(uint8_t offset)
 
 void ldh_a_offset_mem(uint8_t offset)
 {
-    setRegister8(A, (uint16_t)(0xFF00 + offset));
+    setRegister8(A, fetch8(0xFF00 + offset));
 }
 
 // 16-bit loads
@@ -125,7 +125,7 @@ void add8_a_n(uint8_t val)
     (sum & 0xFF) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     CHECK_HALF_CARRY_ADD8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
-    
+
     resetFlag(FLAG_N); // Reset the subtraction flag
 
     setRegister8(A, (uint8_t)sum);
@@ -345,7 +345,7 @@ void daa(void)
         if (testFlag(FLAG_H)) { aVal -= 0x6; }
     }
 
-    if (aVal == 0) setFlag(FLAG_Z);
+    (aVal == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     resetFlag(FLAG_H);
 
     setRegister8(A, aVal);
@@ -682,12 +682,6 @@ bool ret_cond(Flag flag, bool testSet)
     }
 
     return retval;
-}
-
-void reti(void)
-{
-    ret();
-    changeIME(true);
 }
 
 /**

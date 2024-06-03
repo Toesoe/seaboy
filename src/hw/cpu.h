@@ -73,6 +73,7 @@ typedef union __attribute__((__packed__))
     } reg8;
     uint16_t reg16_arr[6];
     uint8_t reg8_arr[12];
+    bool ime;
 } cpu_t;
 
 // functions
@@ -127,14 +128,13 @@ void setRegister16(Register16, uint16_t);
 void setRegister8(Register8, uint8_t);
 
 /**
- * @brief change the interrupt master enable flag
- */
-void changeIME(bool);
-
-/**
  * @brief map instruction to actual decoding function
  * @return total execution cycles used for the last instruction
  */
 int executeInstruction(uint8_t);
+
+int handleInterrupts(void);
+
+int handleTimers(int);
 
 #endif // !_CPU_H_

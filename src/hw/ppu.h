@@ -23,6 +23,14 @@ typedef enum {
     WHITE = 3  // 11
 } ETilePalette_t;
 
+typedef enum
+{
+    MODE_0, // Hblank
+    MODE_1, // Vblank
+    MODE_2, // OAM
+    MODE_3  // drawing
+} EPPUMode_t;
+
 typedef struct
 {
     size_t len;
