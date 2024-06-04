@@ -54,8 +54,20 @@ void resetBus(void)
     memset(&addressBus.map.ioregs.joypad, 0xFF, 1);
 }
 
+void overrideBus(bus_t *pBus)
+{
+    memcpy(&addressBus, pBus, sizeof(bus_t));
+}
+
 uint8_t fetch8(uint16_t addr)
 {
+    if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
+    {
+        if (addressBus.map.ioregs.lcd.stat.ppuMode == 3)
+        {
+            return 0xff;
+        }
+    }
     return addressBus.bus[addr];
 }
 uint16_t fetch16(uint16_t addr)
@@ -72,6 +84,10 @@ void write8(uint8_t val, uint16_t addr)
     }
     else if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
     {
+        if (addressBus.map.ioregs.lcd.stat.ppuMode == 3)
+        {
+            return;
+        }
         #ifdef DEBUG_WRITES
         printf("VRAM WRITE %02X at %04X\n", val, addr);
         #endif

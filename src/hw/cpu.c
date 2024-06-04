@@ -15,13 +15,13 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "instr.h"
 #include "mem.h"
 
 static cpu_t cpu;
-
-static bool enableInterrupts;
+static bus_t *pBus;
 
 static int getRegisterIndexByOpcodeNibble(uint8_t);
 
@@ -31,8 +31,16 @@ static int getRegisterIndexByOpcodeNibble(uint8_t);
 void resetCpu(void)
 {
     memset(&cpu, 0, sizeof(cpu));
-    enableInterrupts = true;
     instrSetCpuPtr(&cpu);
+    pBus = pGetBusPtr();
+}
+
+/**
+ * useful for unit testing instructions
+*/
+void overrideCpu(cpu_t *pCpu)
+{
+    memcpy(&cpu, pCpu, sizeof(cpu_t));
 }
 
 /**
@@ -134,14 +142,6 @@ void setRegister16(Register16 reg, uint16_t value)
 void setRegister8(Register8 reg, uint8_t value)
 {
     cpu.reg8_arr[reg] = value;
-}
-
-/**
- * @brief change the interrupt master enable flag
- */
-void changeIME(bool enable)
-{
-    enableInterrupts = enable;
 }
 
 static int decodeCbPrefix()
@@ -793,7 +793,8 @@ int executeInstruction(uint8_t instr)
         }
         case 0xD9: // RETI
         {
-            reti(); // TODO interrupts
+            ret();
+            cpu.ime = true;
             cycleCount = 4;
             break;
         }
@@ -1057,6 +1058,7 @@ int executeInstruction(uint8_t instr)
                 }
                 default:
                 {
+                    printf("unknown instruction 0x%2x\n", instr);
                     while (true);
                 }
             }
@@ -1069,6 +1071,112 @@ int executeInstruction(uint8_t instr)
     stepCpu(is16);
 
     return cycleCount;
+}
+
+int handleInterrupts(void)
+{
+    bool fired = false;
+    if (pBus->map.interruptEnable.vblank && pBus->map.ioregs.intFlags.vblank)
+    {
+        fired = true;
+        call_nn(0x41);
+    }
+    else if (pBus->map.interruptEnable.lcd && pBus->map.ioregs.intFlags.lcd)
+    {
+        if ((pBus->map.ioregs.lcd.stat.LYCIntSel && pBus->map.ioregs.lcd.stat.lycEqLy) ||
+            (pBus->map.ioregs.lcd.stat.mode0IntSel && pBus->map.ioregs.lcd.stat.ppuMode == 0) ||
+            (pBus->map.ioregs.lcd.stat.mode1IntSel && pBus->map.ioregs.lcd.stat.ppuMode == 1) ||
+            (pBus->map.ioregs.lcd.stat.mode2IntSel && pBus->map.ioregs.lcd.stat.ppuMode == 2))
+        {
+            // STAT int
+            fired = true;
+            call_nn(0x49);
+        }
+    }
+    else if (pBus->map.interruptEnable.timer && pBus->map.ioregs.intFlags.timer)
+    {
+        fired = true;
+        call_nn(0x51);
+    }
+    else if (pBus->map.interruptEnable.serial && pBus->map.ioregs.intFlags.serial)
+    {
+        fired = true;
+        call_nn(0x59);
+    }
+    else if (pBus->map.interruptEnable.joypad && pBus->map.ioregs.intFlags.joypad)
+    {
+        fired = true;
+        call_nn(0x61);
+    }
+
+    if (fired)
+    {
+        cpu.ime = false;
+        return 5;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+void handleTimers(int mCycles)
+{
+    static int localCycles = 0;
+    uint16_t localTim = pBus->map.ioregs.timers.TIMA;
+    while (mCycles--)
+    {
+        if (pBus->map.ioregs.timers.TAC.enable)
+        {
+            localCycles++;
+            switch (pBus->map.ioregs.timers.TAC.clockSelect)
+            {
+                case 0:
+                {
+                    if ((mCycles % 256) == 0)
+                    {
+                        localTim++;
+                    }
+                    break;
+                }
+                case 1:
+                {
+                    if ((mCycles % 4) == 0)
+                    {
+                        localTim++;
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    if ((mCycles % 16) == 0)
+                    {
+                        localTim++;
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    if ((mCycles % 64) == 0)
+                    {
+                        localTim++;
+                    }
+                    break;
+                }
+            }
+
+            if (localTim > UINT8_MAX)
+            {
+                pBus->map.ioregs.timers.TIMA = pBus->map.ioregs.timers.TMA;
+                pBus->map.ioregs.intFlags.timer = 1;
+            }
+        }
+        if (localCycles == 11)
+        {
+            pBus->map.ioregs.divRegister++;
+            localCycles = 0;
+        }
+    }
 }
 
 static int getRegisterIndexByOpcodeNibble(uint8_t lo)

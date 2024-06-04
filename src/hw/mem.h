@@ -169,6 +169,7 @@ typedef union __attribute__((__packed__))
 } bus_t;
 
 void resetBus();
+void overrideBus(bus_t *);
 void mapRomIntoMem(uint8_t **, size_t);
 void unmapBootrom(void);
 

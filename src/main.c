@@ -15,7 +15,7 @@
 #include "drv/render.h"
 #include "hw/cart.h"
 
-//#include "cputest.h"
+#include "cputest.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -43,7 +43,7 @@ size_t bootrom_bin_len = 0xFF;
 
 int main()
 {
-    //runTests();
+    runTests();
     resetBus();
     bus_t *pBus = pGetBusPtr();
     const cpu_t *pCpu = getCpuObject();

@@ -82,6 +82,8 @@ typedef union __attribute__((__packed__))
  */
 void resetCpu(void);
 
+void overrideCpu(cpu_t *);
+
 /**
  * @brief set CPU registers to post-bootrom values
  */
@@ -135,6 +137,6 @@ int executeInstruction(uint8_t);
 
 int handleInterrupts(void);
 
-int handleTimers(int);
+void handleTimers(int);
 
 #endif // !_CPU_H_
