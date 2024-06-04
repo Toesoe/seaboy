@@ -32,10 +32,13 @@ void runTests(void)
     bus_t bus = {0};
     bus_t busFinal = {0};
 
+    instrSetCpuPtr(&cpu);
+
     while ((pEntry = readdir(pTestDir)) != NULL)
     {
-        bool passedCpu = true;
         bool passedBus = true;
+
+        bool checkBus = false;
 
         if (pEntry->d_name[0] == '.') continue;
         char fullpath[256] = "./src/instructions/";
@@ -58,6 +61,12 @@ void runTests(void)
         {
             if (cJSON_IsObject(json_item))
             {
+                overrideBus(&bus);
+                resetCpu();
+                overrideCpu(&cpu);
+
+                int posCounter = 0;
+
                 // Parse and print "initial" object
                 cJSON *initial = cJSON_GetObjectItemCaseSensitive(json_item, "initial");
                 set_state(initial, &cpu, &bus);
@@ -70,24 +79,31 @@ void runTests(void)
 
                 cJSON *cycleEntry = NULL;
 
-                overrideCpu(&cpu);
-                instrSetCpuPtr(&cpu);
-                overrideBus(&bus);
                 cJSON_ArrayForEach(cycleEntry, cycles)
                 {
                     executeInstruction(bus.bus[cpu.reg16.pc]);
+                    posCounter++;
                 }
 
-                if (passedCpu && !memcmp(&cpu, &finalCpu, sizeof(cpu_t)))
+                if (!memcmp(&cpu, &finalCpu, sizeof(cpu_t)))
                 {
-                    printf("cpu mismatch in instr file %s\n", fullpath);
-                    passedCpu = false;
+                    printf("cpu mismatch in instr file %s, name %d\n", fullpath, posCounter);
                 }
 
-                if (passedBus && !memcmp(&bus, &busFinal, sizeof(bus_t)))
+                if (checkBus && passedBus)
                 {
-                    printf("bus mismatch in instr file %s\n", fullpath);
-                    passedBus = false;
+                    if (!memcmp(&bus, &busFinal, sizeof(bus_t)))
+                    {
+                        printf("bus mismatches in instr file %s:\n", fullpath);
+                        for (unsigned int i = 0; i < GB_BUS_SIZE; i++)
+                        {
+                            if (bus.bus[i] != busFinal.bus[i])
+                            {
+                                printf("value 0x%2x != 0x%2x at addr 0x%04x\n", bus.bus[i], busFinal.bus[i], i);
+                            }
+                        }
+                        passedBus = false;
+                    }
                 }
             }
         }

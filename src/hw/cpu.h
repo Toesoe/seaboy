@@ -73,7 +73,6 @@ typedef union __attribute__((__packed__))
     } reg8;
     uint16_t reg16_arr[6];
     uint8_t reg8_arr[12];
-    bool ime;
 } cpu_t;
 
 // functions
@@ -128,6 +127,10 @@ void setRegister16(Register16, uint16_t);
  * @brief set a specific 8-bit register
  */
 void setRegister8(Register8, uint8_t);
+
+void setIME();
+void resetIME();
+bool checkIME();
 
 /**
  * @brief map instruction to actual decoding function

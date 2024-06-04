@@ -20,14 +20,16 @@ static bus_t addressBus;
 static uint8_t *pRom;
 static size_t romSize;
 
+#define DEBUG_WRITES
+#define TEST
+
+#ifndef TEST
+static void bankSwitch(uint8_t, uint16_t);
+static uint8_t cartRam[32768];
 static bool cartramEnabled = false;
 static bool advancedBankingMode = false;
 static int ramBankNo = 0;
-static uint8_t cartRam[32768];
-
-#define DEBUG_WRITES
-
-static void bankSwitch(uint8_t, uint16_t);
+#endif
 
 /**
  * map rom into memmap. copies incoming ptr
@@ -61,6 +63,7 @@ void overrideBus(bus_t *pBus)
 
 uint8_t fetch8(uint16_t addr)
 {
+#ifndef TEST
     if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
     {
         if (addressBus.map.ioregs.lcd.stat.ppuMode == 3)
@@ -68,6 +71,7 @@ uint8_t fetch8(uint16_t addr)
             return 0xff;
         }
     }
+#endif
     return addressBus.bus[addr];
 }
 uint16_t fetch16(uint16_t addr)
@@ -77,6 +81,7 @@ uint16_t fetch16(uint16_t addr)
 
 void write8(uint8_t val, uint16_t addr)
 {
+#ifndef TEST
     if (addr < (ROMN_SIZE * 2))
     {
         // we're writing to cart. handle bank switching stuff
@@ -99,12 +104,13 @@ void write8(uint8_t val, uint16_t addr)
         #endif
         cartRam[addr + (ramBankNo * ERAM_SIZE)] = val;
     }
+#endif
     addressBus.bus[addr] = val;
 }
 
 void write16(uint16_t val, uint16_t addr)
 {
-    if (addr < ROMN_SIZE)
+    if (addr < ROMN_SIZE * 2)
     {
         __asm("nop");
     }
@@ -117,6 +123,7 @@ bus_t *pGetBusPtr(void)
     return &addressBus;
 }
 
+#ifndef TEST
 static void bankSwitch(uint8_t val, uint16_t addr)
 {
     if ((addr > 0x0000) && (addr < 0x2000))
@@ -124,12 +131,12 @@ static void bankSwitch(uint8_t val, uint16_t addr)
         // RAM enable
         if ((val & 0xF) == 0xA)
         {
-            printf("enabling cartram\n");
+            //printf("enabling cartram\n");
             cartramEnabled = true;
         }
         else
         {
-            printf("disabling cartram\n");
+            //printf("disabling cartram\n");
             cartramEnabled = false;
         }
     }
@@ -162,3 +169,4 @@ static void bankSwitch(uint8_t val, uint16_t addr)
         }
     }
 }
+#endif

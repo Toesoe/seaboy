@@ -43,11 +43,11 @@ size_t bootrom_bin_len = 0xFF;
 
 int main()
 {
-    runTests();
+    //runTests();
     resetBus();
     bus_t *pBus = pGetBusPtr();
     const cpu_t *pCpu = getCpuObject();
-    
+
     bool instrHit[256] = {0};
 
     resetCpu();
@@ -66,7 +66,7 @@ int main()
 
         //printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
 
-        if (pCpu->ime)
+        if (checkIME())
         {
             mCycles += handleInterrupts();
         }

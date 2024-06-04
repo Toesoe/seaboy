@@ -148,7 +148,7 @@ void sub8_n_a(uint8_t val)
 {
     int16_t result = pCpu->reg8.a - val;
 
-    (result >= 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    (pCpu->reg8.a < val) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     CHECK_HALF_CARRY_SUB8(val, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
@@ -164,7 +164,7 @@ void sbc8_a_n(uint8_t val)
     int16_t result = pCpu->reg8.a - val - carry; // Perform the subtraction with borrow
 
     (result < 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    (result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    ((uint8_t)result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     CHECK_HALF_CARRY_SUB8(val + carry, pCpu->reg8.a) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     setFlag(FLAG_N); // Always set the subtraction flag
@@ -177,10 +177,10 @@ void and8_a_n(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_C);
     setFlag(FLAG_H);
-    
+
     setRegister8(A, pCpu->reg8.a & val);
 
-    pCpu->reg8.a == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    (pCpu->reg8.a == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
 void or8_a_n(uint8_t val)
@@ -191,7 +191,7 @@ void or8_a_n(uint8_t val)
 
     setRegister8(A, pCpu->reg8.a | val);
 
-    pCpu->reg8.a == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    (pCpu->reg8.a == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
 void xor8_a_n(uint8_t val)
@@ -202,7 +202,7 @@ void xor8_a_n(uint8_t val)
 
     setRegister8(A, pCpu->reg8.a ^ val);
 
-    pCpu->reg8.a == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
+    (pCpu->reg8.a == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
 void cp8_a_n(uint8_t val)
@@ -210,7 +210,6 @@ void cp8_a_n(uint8_t val)
     setFlag(FLAG_N); // Set the subtraction flag
 
     (pCpu->reg8.a == val) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-
     (pCpu->reg8.a < val) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
     // Check for half-carry
@@ -420,7 +419,7 @@ void rl_reg(Register8 reg)
 
 void rl_addr(uint16_t addr)
 {
-    write8(addr, _rl(fetch8(addr)));
+    write8(_rl(fetch8(addr)), addr);
 }
 
 void rrc_reg(Register8 reg)
@@ -440,7 +439,7 @@ void rr_reg(Register8 reg)
 
 void rr_addr(uint16_t addr)
 {
-    write8(addr, _rr(fetch8(addr)));
+    write8(_rr(fetch8(addr)), addr);
 }
 
 void sla_reg(Register8 reg)
@@ -450,7 +449,7 @@ void sla_reg(Register8 reg)
 
 void sla_addr(uint16_t addr)
 {
-    write8(addr, _sla(fetch8(addr)));
+    write8(_sla(fetch8(addr)), addr);
 }
 
 void sra_reg(Register8 reg)
@@ -470,7 +469,6 @@ void srl_reg(Register8 reg)
 
 void srl_addr(uint16_t addr)
 {
-
     write8(_srl(fetch8(addr)), addr);
 }
 
@@ -605,7 +603,7 @@ void call_nn(uint16_t val)
     // push return address onto stack
     // next 2 bytes are the address to call
     pCpu->reg16.sp -= 2;
-    write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
+    write16(pCpu->reg16.pc + 2, pCpu->reg16.sp);
     setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
 }
 
@@ -635,23 +633,9 @@ bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
 
 void rst_n(uint8_t val)
 {
-    switch(val)
-    {
-        case 0x00:
-        case 0x08:
-        case 0x10:
-        case 0x18:
-        case 0x20:
-        case 0x28:
-        case 0x30:
-        case 0x38:
-            pCpu->reg16.sp -= 2;
-            write16(pCpu->reg16.pc, pCpu->reg16.sp);
-            setRegister16(PC, val);
-            break;
-        default:
-            while(true) {} // hang for now
-    }
+    pCpu->reg16.sp -= 2;
+    write16(pCpu->reg16.pc, pCpu->reg16.sp);
+    setRegister16(PC, val * 8);
 }
 
 void ret(void)

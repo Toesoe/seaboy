@@ -23,6 +23,8 @@
 static cpu_t cpu;
 static bus_t *pBus;
 
+static bool imeFlag = false;
+
 static int getRegisterIndexByOpcodeNibble(uint8_t);
 
 /**
@@ -31,6 +33,7 @@ static int getRegisterIndexByOpcodeNibble(uint8_t);
 void resetCpu(void)
 {
     memset(&cpu, 0, sizeof(cpu));
+    imeFlag = false;
     instrSetCpuPtr(&cpu);
     pBus = pGetBusPtr();
 }
@@ -122,6 +125,21 @@ const cpu_t *getCpuObject(void)
     return (const cpu_t *)&cpu;
 }
 
+void setIME()
+{
+    imeFlag = true;
+}
+
+void resetIME()
+{
+    imeFlag = false;
+}
+
+bool checkIME()
+{
+    return imeFlag;
+}
+
 /**
  * @brief set a specific 16-bit register
  * 
@@ -152,8 +170,6 @@ static int decodeCbPrefix()
 
     int addCycles = 0;
 
-    Register8 reg = A;
-
     switch (hi)
     {
         // RLC/RRC
@@ -168,6 +184,7 @@ static int decodeCbPrefix()
             {
                 // RLC (HL)
                 rlc_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x07)
             {
@@ -177,12 +194,13 @@ static int decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // RRC basic, B to L
-                rrc_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
+                rrc_reg(getRegisterIndexByOpcodeNibble(lo - 0x08));
             }
             else if (lo == 0x0E)
             {
                 // RRC (HL)
                 rrc_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x0F)
             {
@@ -203,6 +221,7 @@ static int decodeCbPrefix()
             {
                 // RL (HL)
                 rl_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x07)
             {
@@ -212,12 +231,13 @@ static int decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // RR basic, B to L
-                rr_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
+                rr_reg(getRegisterIndexByOpcodeNibble(lo - 0x08));
             }
             else if (lo == 0x0E)
             {
                 // RR (HL)
                 rr_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x0F)
             {
@@ -238,6 +258,7 @@ static int decodeCbPrefix()
             {
                 // SLA (HL)
                 sla_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x07)
             {
@@ -247,12 +268,13 @@ static int decodeCbPrefix()
             else if (lo < 0x0E)
             {
                 // SRA basic, B to L
-                sra_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
+                sra_reg(getRegisterIndexByOpcodeNibble(lo - 0x08));
             }
             else if (lo == 0x0E)
             {
                 // SRA (HL)
                 sra_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x0F)
             {
@@ -266,32 +288,34 @@ static int decodeCbPrefix()
         {
             if (lo < 0x06)
             {
-                // SLA basic, B to L
+                // SWAP basic, B to L
                 swap8_reg(getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
-                // SLA (HL)
+                // SWAP (HL)
                 swap8_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x07)
             {
-                // SLA A
+                // SWAP A
                 swap8_reg(A);
             }
             else if (lo < 0x0E)
             {
-                // SRA basic, B to L
-                srl_reg(getRegisterIndexByOpcodeNibble(lo - 0x07));
+                // SRL basic, B to L
+                srl_reg(getRegisterIndexByOpcodeNibble(lo - 0x08));
             }
             else if (lo == 0x0E)
             {
-                // SRA (HL)
+                // SRL (HL)
                 srl_addr(cpu.reg16.hl);
+                addCycles = 2;
             }
             else if (lo == 0x0F)
             {
-                // SRA A
+                // SRL A
                 srl_reg(A);
             }
             break;
@@ -301,27 +325,30 @@ static int decodeCbPrefix()
         {
             if (lo < 0x06)
             {
-                // bit 0
-                reg += lo + 1;
-                bit_n_reg(0, reg);
-            }
-            else if ((lo > 0x07) && (lo < 0x0F))
-            {
-                // bit 1
-                reg += lo - 0x06;
-                bit_n_reg(1, reg);
+                bit_n_reg(0, getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(0, cpu.reg16.hl);
+                bit_n_reg(0, cpu.reg16.hl);
                 addCycles = 1;
             }
-            else
+            else if (lo == 0x07)
             {
-                bit_n_addr(1, cpu.reg16.hl);
+                bit_n_reg(0, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(1, getRegisterIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_reg(1, cpu.reg16.hl);
                 addCycles = 1;
             }
-
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(1, A);
+            }
             break;
         }
         // BIT 2/3, reg
@@ -329,26 +356,31 @@ static int decodeCbPrefix()
         {
             if (lo < 0x06)
             {
-                // bit 2
-                reg += lo + 1;
-                bit_n_reg(2, reg);
-            }
-            else if ((lo > 0x07) && (lo < 0x0F))
-            {
-                // bit 3
-                reg += lo - 0x06;
-                bit_n_reg(3, reg);
+                bit_n_reg(2, getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(2, cpu.reg16.hl);
+                bit_n_reg(2, cpu.reg16.hl);
                 addCycles = 1;
             }
-            else
+            else if (lo == 0x07)
             {
-                bit_n_addr(3, cpu.reg16.hl);
+                bit_n_reg(2, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(3, getRegisterIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_reg(3, cpu.reg16.hl);
                 addCycles = 1;
             }
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(3, A);
+            }
+            break;
 
             break;
         }
@@ -357,27 +389,30 @@ static int decodeCbPrefix()
         {
             if (lo < 0x06)
             {
-                // bit 4
-                reg += lo + 1;
-                bit_n_reg(4, reg);
-            }
-            else if ((lo > 0x07) && (lo < 0x0F))
-            {
-                // bit 5
-                reg += lo - 0x06;
-                bit_n_reg(5, reg);
+                bit_n_reg(4, getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(4, cpu.reg16.hl);
+                bit_n_reg(4, cpu.reg16.hl);
                 addCycles = 1;
             }
-            else
+            else if (lo == 0x07)
             {
-                bit_n_addr(5, cpu.reg16.hl);
+                bit_n_reg(4, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(5, getRegisterIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_reg(5, cpu.reg16.hl);
                 addCycles = 1;
             }
-
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(5, A);
+            }
             break;
         }
         // BIT 6/7, reg
@@ -385,32 +420,286 @@ static int decodeCbPrefix()
         {
             if (lo < 0x06)
             {
-                // bit 6
-                reg += lo + 1;
-                bit_n_reg(6, reg);
-            }
-            else if ((lo > 0x07) && (lo < 0x0F))
-            {
-                // bit 7
-                reg += lo - 0x06;
-                bit_n_reg(7, reg);
+                bit_n_reg(6, getRegisterIndexByOpcodeNibble(lo));
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(6, cpu.reg16.hl);
+                bit_n_reg(6, cpu.reg16.hl);
                 addCycles = 1;
             }
-            else
+            else if (lo == 0x07)
             {
-                bit_n_addr(7, cpu.reg16.hl);
+                bit_n_reg(6, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(7, getRegisterIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_reg(7, cpu.reg16.hl);
                 addCycles = 1;
             }
-
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(7, A);
+            }
             break;
         }
+        // RES 0/1
+        case 0x08:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo), 0);
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(cpu.reg16.hl, 0);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(A, 0);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 1);
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(cpu.reg16.hl, 1);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(A, 1);
+            }
+            break;
+        }
+        // RES 2/3
+        case 0x09:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo), 2);
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(cpu.reg16.hl, 2);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(A, 2);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 3);
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(cpu.reg16.hl, 3);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(A, 3);
+            }
+            break;
+        }
+        // RES 4/5
+        case 0x0A:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo), 4);
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(cpu.reg16.hl, 4);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(A, 4);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 5);
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(cpu.reg16.hl, 5);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(A, 5);
+            }
+            break;
+        }
+        // RES 6/7
+        case 0x0B:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo), 6);
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(cpu.reg16.hl, 6);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(A, 6);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 7);
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(cpu.reg16.hl, 7);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(A, 7);
+            }
+            break;
+        }
+        // SET 0/1
+        case 0x0C:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo), 0);
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(cpu.reg16.hl, 0);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(A, 0);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 1);
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(cpu.reg16.hl, 1);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(A, 1);
+            }
+            break;
+        }
+        // SET 2/3
+        case 0x0D:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo), 2);
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(cpu.reg16.hl, 2);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(A, 2);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 3);
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(cpu.reg16.hl, 3);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(A, 3);
+            }
+            break;
+        }
+        // SET 4/5
+        case 0x0e:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo), 4);
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(cpu.reg16.hl, 4);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(A, 4);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 5);
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(cpu.reg16.hl, 5);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(A, 5);
+            }
+            break;
+        }
+        // SET 6/7
+        case 0x0F:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo), 6);
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(cpu.reg16.hl, 6);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(A, 6);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(getRegisterIndexByOpcodeNibble(lo - 0x08), 7);
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(cpu.reg16.hl, 7);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(A, 7);
+            }
+            break;
+        }
+
+
         default:
         {
-            break;
+            printf("unknown CB instr CB %02X\n", instr);
+            while(true);
         }
     }
 
@@ -540,16 +829,16 @@ int executeInstruction(uint8_t instr)
             cycleCount = 3;
             break;
         }
-        case 0xEA: // LD (a16), A (load from A to to 0xFF00+16-bit unsigned value)
+        case 0xEA: // LD (a16), A (load from A to addr)
         {
-            write8(cpu.reg8.a, 0xFF00 + fetch16(++cpu.reg16.pc));
+            write8(cpu.reg8.a, fetch16(++cpu.reg16.pc));
             cycleCount = 4;
             is16 = true;
             break;
         }
-        case 0xFA: // LD A, (a16) (load from 0xFF00+16-bit unsigned value to A)
+        case 0xFA: // LD A, (a16) (load from addr to A)
         {
-            ld_reg8_addr(A, 0xFF00 + fetch16(++cpu.reg16.pc));
+            ld_reg8_addr(A, fetch16(++cpu.reg16.pc));
             cycleCount = 4;
             is16 = true;
             break;
@@ -644,41 +933,32 @@ int executeInstruction(uint8_t instr)
 
         // Weirdly positioned instructions in map
 
-        case 0xFE: // CP d8
-        {
-            cp8_a_n(fetch8(++cpu.reg16.pc));
-            cycleCount = 2;
-            break;
-        }
         // JUMP instructions
 
         case 0x18: // JR s8
         {
-            jr_n_signed(fetch8(cpu.reg16.pc + 1));
+            jr_n_signed(fetch8(++cpu.reg16.pc));
+            //cpu.reg16.pc--; // we jumped to an absolute offset; no increments
             cycleCount = 3;
-            cpu.reg16.pc++;
             break;
         }
         case 0x20: // JR NZ,s8
         case 0x28: // JR Z,s8
         {
             cycleCount = 2;
-            if (jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_Z, (lo == 0x8 ? true : false))) { cycleCount++; }
-            cpu.reg16.pc++;
+            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_Z, (lo == 0x8 ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
             break;
         }
         case 0x30: // JR NC,s8
         case 0x38: // JR C,s8
         {
             cycleCount = 2;
-            if (jr_n_cond_signed(fetch8(cpu.reg16.pc + 1), FLAG_C, (lo == 0x8 ? true : false))) { cycleCount++; }
-            cpu.reg16.pc++;
+            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_C, (lo == 0x8 ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
             break;
         }
         case 0xC3: // JP a16
         {
-            jmp_nn(fetch16(cpu.reg16.pc + 1));
-            cpu.reg16.pc--;
+            jmp_nn(fetch16(++cpu.reg16.pc));
             cycleCount = 4;
             break;
         }
@@ -686,14 +966,24 @@ int executeInstruction(uint8_t instr)
         case 0xCA: // JP Z,a16
         {
             cycleCount = 3;
-            if (jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, (lo == 0xA ? true : false))) { cycleCount++; }
+            if (jmp_nn_cond(fetch16(++cpu.reg16.pc), FLAG_Z, (lo == 0xA ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
+            else { is16 = true; } // PC is still at the high byte of uint16
             break;
         }
         case 0xD2: // JP NC,a16
         case 0xDA: // JP C,a16
         {
             cycleCount = 3;
-            if (jmp_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, (lo == 0xA ? true : false))) { cycleCount++; }
+            if (jmp_nn_cond(fetch16(++cpu.reg16.pc), FLAG_C, (lo == 0xA ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
+            else { is16 = true; } // PC is still at the high byte of uint16
+            break;
+        }
+
+        case 0xE9: // JP HL
+        {
+            setRegister16(PC, cpu.reg16.hl);
+            cycleCount = 1;
+            cpu.reg16.pc--;
             break;
         }
 
@@ -702,31 +992,35 @@ int executeInstruction(uint8_t instr)
         case 0xC4: // CALL NZ,a16
         {
             cycleCount = 3;
-            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, false)) { cycleCount += 3; }
+            if (call_nn_cond(fetch16(++cpu.reg16.pc), FLAG_Z, false)) { cycleCount += 3; }
+            else { is16 = true; } // PC is still at the high byte of uint16
             break;
         }
         case 0xD4: // CALL NC,a16
         {
             cycleCount = 3;
-            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, false)) { cycleCount += 3; }
+            if (call_nn_cond(fetch16(++cpu.reg16.pc), FLAG_C, false)) { cycleCount += 3; }
+            else { is16 = true; } // PC is still at the high byte of uint16
             break;
         }
         case 0xCC: // CALL Z,a16
         {
             cycleCount = 3;
-            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_Z, true)) { cycleCount += 3; }
+            if (call_nn_cond(fetch16(++cpu.reg16.pc), FLAG_Z, true)) { cycleCount += 3; }
+            else { is16 = true; } // PC is still at the high byte of uint16
             break;
         }
         case 0xDC: // CALL C,a16
         {
             cycleCount = 3;
-            if (call_nn_cond(fetch16(cpu.reg16.pc + 1), FLAG_C, true)) { cycleCount += 3; }
+            if (call_nn_cond(fetch16(++cpu.reg16.pc), FLAG_C, true)) { cycleCount += 3; }
+            else { is16 = true; } // PC is still at the high byte of uint16
             break;
         }
         case 0xCD: // CALL a16
         {
             cycleCount = 6;
-            call_nn(fetch16(cpu.reg16.pc + 1));
+            call_nn(fetch16(++cpu.reg16.pc));
             break;
         }
 
@@ -794,7 +1088,35 @@ int executeInstruction(uint8_t instr)
         case 0xD9: // RETI
         {
             ret();
-            cpu.ime = true;
+            imeFlag = true;
+            cycleCount = 4;
+            break;
+        }
+
+        case 0xC0: // RET NZ
+        {
+            if (!testFlag(FLAG_Z)) { ret(); }
+            cycleCount = 4;
+            break;
+        }
+
+        case 0xC8: // RET Z
+        {
+            if (testFlag(FLAG_Z)) { ret(); }
+            cycleCount = 4;
+            break;
+        }
+
+        case 0xD0: // RET NC
+        {
+            if (!testFlag(FLAG_C)) { ret(); }
+            cycleCount = 4;
+            break;
+        }
+
+        case 0xD8: // RET C
+        {
+            if (testFlag(FLAG_C)) { ret(); }
             cycleCount = 4;
             break;
         }
@@ -802,7 +1124,171 @@ int executeInstruction(uint8_t instr)
         case 0x76: // HALT
         {
             cycleCount = 1;
-            while(true);
+            //while(true);
+            break;
+        }
+
+        case 0x10: // STOP
+        {
+            cycleCount = 2;
+            memset(&pBus->map.interruptEnable, 0, 1);
+            memset(&pBus->map.ioregs.intFlags, 0, 1);
+            break;
+        }
+
+        case 0x27: // DAA
+        {
+            daa();
+            cycleCount = 1;
+            break;
+        }
+
+        case 0x2F: // CPL
+        {
+            cpl();
+            cycleCount = 1;
+            break;
+        }
+
+        case 0x3F: // CCF
+        {
+            ccf();
+            cycleCount = 1;
+            break;
+        }
+
+        case 0x37: // SCF
+        {
+            scf();
+            cycleCount = 1;
+            break;
+        }
+
+        case 0xF3: // DI
+        {
+            imeFlag = false;
+            cycleCount = 1;
+            break;
+        }
+
+        case 0xFB: // EI
+        {
+            imeFlag = true;
+            cycleCount = 1;
+            break;
+        }
+
+        case 0x09: // ADD HL, BC
+        case 0x19: // ADD HL, DE
+        case 0x29: // ADD HL, HL
+        case 0x39: // ADD HL, SP
+        {
+            add16_hl_n(cpu.reg16_arr[hi + 1]);
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xC7: // RST 0
+        case 0xD7: // RST 2
+        case 0xE7: // RST 4
+        case 0xF7: // RST 6
+        case 0xCF: // RST 1
+        case 0xDF: // RST 3
+        case 0xEF: // RST 5
+        case 0xFF: // RST 7
+        {
+            uint8_t num = (hi - 0xC) * 2;
+            if (lo > 0x07)
+            {
+                num += 1;
+            }
+            rst_n(num);
+            cycleCount = 4;
+            break;
+        }
+
+        case 0xC6: // ADD a, d8
+        {
+            add8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xD6: // SUB d8
+        {
+            sub8_n_a(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xE6: // AND d8
+        {
+            and8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xF6: // ADD a, d8
+        {
+            or8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xCE: // ADC a, d8
+        {
+            adc8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xDE: // SBC a, d8
+        {
+            sbc8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xEE: // XOR d8
+        {
+            xor8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xFE: // CP d8
+        {
+            cp8_a_n(fetch8(++cpu.reg16.pc));
+            cycleCount = 2;
+            break;
+        }
+
+        case 0xE8: // ADD SP, s8
+        {
+            setRegister16(SP, cpu.reg16.sp + ((int8_t)fetch8(++cpu.reg16.pc)));
+            cycleCount = 4;
+            break;
+        }
+
+        case 0x08: // LD (a16), SP
+        {
+            write16(fetch16(++cpu.reg16.pc), cpu.reg16.sp);
+            cycleCount = 5;
+            cpu.reg16.pc += 2;
+            break;
+        }
+
+        case 0xF8: // LD HL, SP+s8
+        {
+            setRegister16(HL, cpu.reg16.sp + ((int8_t)fetch8(++cpu.reg16.pc)));
+            cycleCount = 3;
+            break;
+        }
+
+        case 0xF9: // LD SP, HL
+        {
+            setRegister16(SP, cpu.reg16.hl);
+            cycleCount = 2;
             break;
         }
 
@@ -1058,7 +1544,7 @@ int executeInstruction(uint8_t instr)
                 }
                 default:
                 {
-                    printf("unknown instruction 0x%2x\n", instr);
+                    printf("unknown instruction 0x%2x at 0x%04x\n", instr, cpu.reg16.pc);
                     while (true);
                 }
             }
@@ -1111,7 +1597,7 @@ int handleInterrupts(void)
 
     if (fired)
     {
-        cpu.ime = false;
+        imeFlag = false;
         return 5;
     }
     else
