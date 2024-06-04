@@ -548,7 +548,7 @@ void jmp_hl(void)
     setRegister16(PC, pCpu->reg16.hl);
 }
 
-void jr_n(int8_t val)
+void jr_n(uint8_t val)
 {
     setRegister16(PC, pCpu->reg16.pc + val);
 }
@@ -601,9 +601,8 @@ bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
 void call_nn(uint16_t val)
 {
     // push return address onto stack
-    // next 2 bytes are the address to call
     pCpu->reg16.sp -= 2;
-    write16(pCpu->reg16.pc + 2, pCpu->reg16.sp);
+    write16(pCpu->reg16.pc, pCpu->reg16.sp);
     setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
 }
 
@@ -640,7 +639,7 @@ void rst_n(uint8_t val)
 
 void ret(void)
 {
-    setRegister16(PC, fetch16(pCpu->reg16.sp) - 1); // -1 as we always increment at the end of the main loop
+    setRegister16(PC, fetch16(pCpu->reg16.sp)); // -1 as we always increment at the end of the main loop
     pCpu->reg16.sp += 2;
 }
 

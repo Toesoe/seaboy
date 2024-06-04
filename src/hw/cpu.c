@@ -938,7 +938,6 @@ int executeInstruction(uint8_t instr)
         case 0x18: // JR s8
         {
             jr_n_signed(fetch8(++cpu.reg16.pc));
-            //cpu.reg16.pc--; // we jumped to an absolute offset; no increments
             cycleCount = 3;
             break;
         }
@@ -959,6 +958,7 @@ int executeInstruction(uint8_t instr)
         case 0xC3: // JP a16
         {
             jmp_nn(fetch16(++cpu.reg16.pc));
+            cpu.reg16.pc--; // absolute jump
             cycleCount = 4;
             break;
         }
@@ -967,7 +967,7 @@ int executeInstruction(uint8_t instr)
         {
             cycleCount = 3;
             if (jmp_nn_cond(fetch16(++cpu.reg16.pc), FLAG_Z, (lo == 0xA ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
-            else { is16 = true; } // PC is still at the high byte of uint16
+            else {cpu.reg16.pc++;}
             break;
         }
         case 0xD2: // JP NC,a16
@@ -975,15 +975,15 @@ int executeInstruction(uint8_t instr)
         {
             cycleCount = 3;
             if (jmp_nn_cond(fetch16(++cpu.reg16.pc), FLAG_C, (lo == 0xA ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
-            else { is16 = true; } // PC is still at the high byte of uint16
+            else {cpu.reg16.pc++;}
             break;
         }
 
         case 0xE9: // JP HL
         {
             setRegister16(PC, cpu.reg16.hl);
+            cpu.reg16.pc--; // absolute jump
             cycleCount = 1;
-            cpu.reg16.pc--;
             break;
         }
 
@@ -1565,7 +1565,7 @@ int handleInterrupts(void)
     if (pBus->map.interruptEnable.vblank && pBus->map.ioregs.intFlags.vblank)
     {
         fired = true;
-        call_nn(0x41);
+        call_nn(0x40);
     }
     else if (pBus->map.interruptEnable.lcd && pBus->map.ioregs.intFlags.lcd)
     {
@@ -1576,23 +1576,23 @@ int handleInterrupts(void)
         {
             // STAT int
             fired = true;
-            call_nn(0x49);
+            call_nn(0x48);
         }
     }
     else if (pBus->map.interruptEnable.timer && pBus->map.ioregs.intFlags.timer)
     {
         fired = true;
-        call_nn(0x51);
+        call_nn(0x50);
     }
     else if (pBus->map.interruptEnable.serial && pBus->map.ioregs.intFlags.serial)
     {
         fired = true;
-        call_nn(0x59);
+        call_nn(0x58);
     }
     else if (pBus->map.interruptEnable.joypad && pBus->map.ioregs.intFlags.joypad)
     {
         fired = true;
-        call_nn(0x61);
+        call_nn(0x60);
     }
 
     if (fired)
