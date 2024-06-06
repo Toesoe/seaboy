@@ -53,8 +53,8 @@ int main()
     int intcount = 0;
 
     bool previousInstructionSetIME = false;
-    cpu_t prevState;
-    bus_t prevBus;
+    // cpu_t prevState;
+    // bus_t prevBus;
 
     resetCpu();
     ppuInit();
@@ -72,7 +72,7 @@ int main()
         int mCycles = 0;
         uint8_t opcode = pBus->bus[pCpu->reg16.pc];
 
-        printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
+        printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
 
         if (!previousInstructionSetIME)
         {
@@ -80,11 +80,6 @@ int main()
         }
 
         previousInstructionSetIME = false;
-
-        if ((pCpu->reg16.pc >= (ROMN_SIZE * 2)) && !instrHit[opcode])
-        {
-            instrHit[opcode] = true;
-        }
         
         if (pCpu->reg16.pc == 0x20a)
         {
@@ -112,15 +107,20 @@ int main()
             previousInstructionSetIME = true;
         }
 
-        if (pCpu->reg16.pc == 0x293)
+        if (pCpu->reg16.pc == 0x28)
         {
             __asm("nop");
         }
 
+        if (/*(pCpu->reg16.pc >= (ROMN_SIZE * 2)) && */!instrHit[opcode])
+        {
+            instrHit[opcode] = true;
+        }
+
         if (!checkHalted())
         {
-            memcpy(&prevState, pCpu, sizeof(cpu_t));
-            memcpy(&prevBus, pBus, sizeof(bus_t));
+            //memcpy(&prevState, pCpu, sizeof(cpu_t));
+            //memcpy(&prevBus, pBus, sizeof(bus_t));
             mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
         }
 
@@ -128,7 +128,7 @@ int main()
 
         handleTimers(mCycles);
 
-        if (pBus->map.ioregs.disableBootrom)
+        if (pBus->map.ioregs.disableBootrom == 1)
         {
             unmapBootrom();
         }

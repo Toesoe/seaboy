@@ -105,7 +105,7 @@ bool testFlag(Flag flag)
  */
 void stepCpu(bool is16)
 {
-    cpu.reg16.pc += 1 + is16 ? 1 : 0;
+    cpu.reg16.pc += 1 + is16;
 }
 
 /**
@@ -733,8 +733,8 @@ int executeInstruction(uint8_t instr)
         case 0x31: // LD SP,d16
         {
             Register16 reg = BC + hi; // use high nibble
-            ld_reg16_imm(reg, fetch16(cpu.reg16.pc + 1));
-            cpu.reg16.pc += 2;
+            ld_reg16_imm(reg, fetch16(++cpu.reg16.pc));
+            is16 = true;
             cycleCount = 3;
             break;
         }
@@ -991,7 +991,6 @@ int executeInstruction(uint8_t instr)
         case 0x18: // JR s8: relative jump
         {
             jr_n_signed(fetch8(++cpu.reg16.pc));
-            cpu.reg16.pc--; // absolute jump; don't increment at end of loop
             cycleCount = 3;
             break;
         }
@@ -999,16 +998,16 @@ int executeInstruction(uint8_t instr)
         case 0x28: // JR Z,s8
         {
             cycleCount = 2;
-            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_Z, (lo == 0x8 ? true : false))) { cycleCount++; cpu.reg16.pc--; } //cpu.reg16.pc--; }
-            // no increment: instruction is only 2 bytes long
+            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_Z, (lo == 0x8 ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
+            // no increment when not jumping: instruction is only 2 bytes long
             break;
         }
         case 0x30: // JR NC,s8
         case 0x38: // JR C,s8
         {
             cycleCount = 2;
-            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_C, (lo == 0x8 ? true : false))) { cycleCount++; cpu.reg16.pc--; } //cpu.reg16.pc--; }
-            // no increment: instruction is only 2 bytes long
+            if (jr_n_cond_signed(fetch8(++cpu.reg16.pc), FLAG_C, (lo == 0x8 ? true : false))) { cycleCount++; } //cpu.reg16.pc--; }
+            // no increment when not jumping: instruction is only 2 bytes long
             break;
         }
         case 0xC3: // JP a16

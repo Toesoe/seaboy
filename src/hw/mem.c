@@ -53,7 +53,7 @@ void unmapBootrom(void)
 void resetBus(void)
 {
     memset(&addressBus, 0xFF, sizeof(addressBus));
-    addressBus.map.ioregs.joypad.buttonSelect = 1;
+    addressBus.map.ioregs.joypad.dpadSelect = 1;
 }
 
 void overrideBus(bus_t *pBus)
