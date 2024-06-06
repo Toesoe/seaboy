@@ -12,6 +12,8 @@
 
 #include "mem.h"
 
+#include <stdio.h>
+
 static cpu_t *pCpu;
 
 #define CHECK_HALF_CARRY_ADD8(a, b) (((((a) & 0xf) + ((b) & 0xf)) & 0x10) == 0x10)
@@ -29,6 +31,8 @@ static uint8_t _rr(uint8_t val);
 static uint8_t _rrc(uint8_t val);
 static uint8_t _sra(uint8_t val);
 static uint8_t _srl(uint8_t val);
+
+static bool isRSTReturn = false;
 
 void instrSetCpuPtr(cpu_t *pCpuSet)
 {
@@ -600,10 +604,14 @@ bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
 
 void call_nn(uint16_t val)
 {
-    // push return address onto stack
+    if (((uint32_t)(pCpu->reg16.sp - 2)) > UINT16_MAX)
+    {
+        printf("new SP invalid!\n");
+        return;
+    }
     pCpu->reg16.sp -= 2;
     write16(pCpu->reg16.pc, pCpu->reg16.sp);
-    setRegister16(PC, val - 1); // -1 since we always increment at the end of the main loop
+    setRegister16(PC, val);
 }
 
 bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
@@ -634,13 +642,20 @@ void rst_n(uint8_t val)
 {
     pCpu->reg16.sp -= 2;
     write16(pCpu->reg16.pc, pCpu->reg16.sp);
-    setRegister16(PC, val * 8);
+    setRegister16(PC, (val * 8));
+    isRSTReturn = true;
 }
 
 void ret(void)
 {
-    setRegister16(PC, fetch16(pCpu->reg16.sp)); // -1 as we always increment at the end of the main loop
+    setRegister16(PC, (fetch16(pCpu->reg16.sp)));
     pCpu->reg16.sp += 2;
+
+    if (isRSTReturn)
+    {
+        setRegister16(PC, pCpu->reg16.pc -= 2);
+        isRSTReturn = false;
+    }
 }
 
 bool ret_cond(Flag flag, bool testSet)

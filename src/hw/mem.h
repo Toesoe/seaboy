@@ -120,11 +120,11 @@ typedef union __attribute__((__packed__))
         uint8_t eram[ERAM_SIZE];    // 0xA000 -> 0xBFFF: not handled directly here
         union __attribute__((__packed__))
         {
-            uint8_t all[WRAM_SIZE]; // 0xC000 -> 0xCFFF
+            uint8_t all[WRAM_SIZE]; // 0xC000 -> 0xDFFF
             struct __attribute__((__packed__))
             {
-                uint8_t bank0[WRAM_SIZE / 2]; // 0xC000 -> 0xC7FF
-                uint8_t bankn[WRAM_SIZE / 2]; // 0xC800 -> 0xCFFF
+                uint8_t bank0[WRAM_SIZE / 2]; // 0xC000 -> 0xCFFF
+                uint8_t bankn[WRAM_SIZE / 2]; // 0xD000 -> 0xDFFF
             } banks;
         } wram;
         uint8_t echo[ECHO_SIZE];    // 0xE000 -> 0xFDFF
@@ -138,11 +138,11 @@ typedef union __attribute__((__packed__))
             uint8_t _padding1;      // 0xFF03
             uint8_t divRegister;    // 0xFF04
             STimers_t timers;       // 0xFF05 -> 0xFF07
-            uint8_t _padding2[8];   // 0xFF08 -> 0xFF0E
+            uint8_t _padding2[7];   // 0xFF08 -> 0xFF0E
             SInterruptFlags_t intFlags; // 0xFF0F
-            uint8_t audio[22];      // 0xFF10 -> 0xFF26
-            uint8_t _padding3[10];  // 0xFF27 -> 0xFF2F
-            uint8_t wavepattern[0xF]; // 0xFF30 -> 0xFF3F
+            uint8_t audio[23];      // 0xFF10 -> 0xFF26
+            uint8_t _padding3[9];   // 0xFF27 -> 0xFF2F
+            uint8_t wavepattern[0x10]; // 0xFF30 -> 0xFF3F
             struct __attribute__((__packed__))
             {
                 SRegLCDC_t control; // 0xFF40

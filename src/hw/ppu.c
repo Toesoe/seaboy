@@ -182,6 +182,7 @@ bool ppuLoop(int cyclesToRun)
                     {
                         // go to Vblank if we processed the last line
                         g_currentPPUState.mode = MODE_1;
+                        g_pMemoryBus->map.ioregs.intFlags.vblank = 1;
                     }
                     else
                     {
@@ -193,7 +194,6 @@ bool ppuLoop(int cyclesToRun)
             }
             case MODE_1: // Vblank for the remaining lines
             {
-                g_pMemoryBus->map.ioregs.intFlags.vblank = 1;
                 if (g_currentPPUState.cycleCount < CYCLES_PER_FRAME)
                 {
                     if (g_currentPPUState.currentLineCycleCount == 456)

@@ -50,6 +50,12 @@ int main()
 
     bool instrHit[256] = {0};
 
+    int intcount = 0;
+
+    bool previousInstructionSetIME = false;
+    cpu_t prevState;
+    bus_t prevBus;
+
     resetCpu();
     ppuInit();
     initRenderWindow();
@@ -57,31 +63,67 @@ int main()
     loadRom("Tetris.gb");
 
     // overlay with bootrom
-    memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len + 1);
+    //memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len + 1);
+
+    cpuSkipBootrom();
 
     while(true)
     {
         int mCycles = 0;
         uint8_t opcode = pBus->bus[pCpu->reg16.pc];
 
-        //printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
+        printf("executing 0x%02x at pc 0x%02x\n", pBus->bus[pCpu->reg16.pc], pCpu->reg16.pc);
 
-        if (checkIME())
+        if (!previousInstructionSetIME)
         {
             mCycles += handleInterrupts();
         }
 
-        if ((pCpu->reg16.pc >= 0x100) && !instrHit[opcode])
+        previousInstructionSetIME = false;
+
+        if ((pCpu->reg16.pc >= (ROMN_SIZE * 2)) && !instrHit[opcode])
         {
             instrHit[opcode] = true;
         }
         
-        if (pCpu->reg16.pc == 0x237) // here it fails
+        if (pCpu->reg16.pc == 0x20a)
+        {
+            __asm("nop");
+            intcount++;
+            // if (intcount == 2)
+            // {
+            //     exit(0);
+            // }
+        }
+
+        if (pCpu->reg16.pc == 0x17e)
         {
             __asm("nop");
         }
 
-        mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
+        if (pCpu->reg16.pc == 0x199)
+        {
+            __asm("nop");
+        }
+
+        // this is done to delay executing interrupts by one cycle
+        if (pBus->bus[pCpu->reg16.pc] == 0xFB)
+        {
+            previousInstructionSetIME = true;
+        }
+
+        if (pCpu->reg16.pc == 0x293)
+        {
+            __asm("nop");
+        }
+
+        if (!checkHalted())
+        {
+            memcpy(&prevState, pCpu, sizeof(cpu_t));
+            memcpy(&prevBus, pBus, sizeof(bus_t));
+            mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
+        }
+
         int ppuCycles = mCycles * 4;
 
         handleTimers(mCycles);

@@ -1,7 +1,7 @@
 builddir = build
 srcdir = src
-cflags  = -Wall -Werror -Wextra -Wshadow -fanalyzer  -std=c2x
-ldflags = -g -ggdb -lgcc -lm -lSDL2
+cflags  = -Wall -Werror -Wextra -Wshadow -fanalyzer -fsanitize=address -std=c2x
+ldflags = -g -ggdb -lasan -lgcc -lm -lSDL2
 
 rule cc
     command = gcc $ldflags $cflags -c $in -o $out

@@ -132,6 +132,8 @@ void setIME();
 void resetIME();
 bool checkIME();
 
+bool checkHalted();
+
 /**
  * @brief map instruction to actual decoding function
  * @return total execution cycles used for the last instruction

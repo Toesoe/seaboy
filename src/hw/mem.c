@@ -52,8 +52,8 @@ void unmapBootrom(void)
 
 void resetBus(void)
 {
-    memset(&addressBus, 0, sizeof(addressBus));
-    memset(&addressBus.map.ioregs.joypad, 0xFF, 1);
+    memset(&addressBus, 0xFF, sizeof(addressBus));
+    addressBus.map.ioregs.joypad.buttonSelect = 1;
 }
 
 void overrideBus(bus_t *pBus)
@@ -63,15 +63,6 @@ void overrideBus(bus_t *pBus)
 
 uint8_t fetch8(uint16_t addr)
 {
-#ifndef TEST
-    if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
-    {
-        if (addressBus.map.ioregs.lcd.stat.ppuMode == 3)
-        {
-            return 0xff;
-        }
-    }
-#endif
     return addressBus.bus[addr];
 }
 uint16_t fetch16(uint16_t addr)
@@ -97,12 +88,17 @@ void write8(uint8_t val, uint16_t addr)
         printf("VRAM WRITE %02X at %04X\n", val, addr);
         #endif
     }
-    else if ((addr >= 0xA000) && (addr <= ERAM_SIZE) && cartramEnabled)
+    else if ((addr >= 0xA000) && (addr <= ERAM_SIZE)) //&& cartramEnabled)
     {
         #ifdef DEBUG_WRITES
         printf("CARTRAM WRITE %02X at %04X bank %d\n", val, addr, ramBankNo);
         #endif
         cartRam[addr + (ramBankNo * ERAM_SIZE)] = val;
+    }
+    else if (addr == 0xFF46) // OAM DMA
+    {
+        memcpy(&addressBus.bus[0xFE00], &addressBus.bus[(uint16_t)val * 256], 0x9F);
+        // costs 160 mcycles
     }
 #endif
     addressBus.bus[addr] = val;
@@ -110,10 +106,6 @@ void write8(uint8_t val, uint16_t addr)
 
 void write16(uint16_t val, uint16_t addr)
 {
-    if (addr < ROMN_SIZE * 2)
-    {
-        __asm("nop");
-    }
     addressBus.bus[addr]     = (uint8_t)(val & 0xFF);
     addressBus.bus[addr + 1] = (uint8_t)(val >> 8);
 }
