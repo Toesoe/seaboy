@@ -40,7 +40,7 @@ typedef struct
 
 void buildTiles(uint32_t);
 
-void ppuInit(void);
+void ppuInit(bool);
 bool ppuLoop(int);
 
 #endif //!_PPU_H_

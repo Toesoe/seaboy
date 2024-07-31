@@ -113,11 +113,22 @@ static void fillPixelFifo(uint8_t lx)
     g_currentPPUState.pixelFifo.len = PIXEL_FIFO_SIZE;
 }
 
-void ppuInit(void)
+void ppuInit(bool skipBootrom)
 {
     g_pMemoryBus = pGetBusPtr();
+
+    if (!skipBootrom)
+    {
+        g_currentPPUState.mode = MODE_2;
+    }
+    else
+    {
+        g_currentPPUState.mode = MODE_1;
+    }
+
+    g_pMemoryBus->map.ioregs.lcd.control.lcdPPUEnable = 0;
+    
     memset(&g_currentPPUState, 0, sizeof(g_currentPPUState));
-    g_currentPPUState.mode = MODE_2;
 }
 
 /**
@@ -212,6 +223,7 @@ bool ppuLoop(int cyclesToRun)
                     g_currentPPUState.currentLineCycleCount = 0;
                     g_pMemoryBus->map.ioregs.lcd.ly = 0;
                     g_currentPPUState.cycleCount = 0;
+                    g_pMemoryBus->map.ioregs.intFlags.vblank = 0;
                 }
                 
                 break;

@@ -33,7 +33,7 @@ static int getRegisterIndexByOpcodeNibble(uint8_t);
  */
 void resetCpu(void)
 {
-    memset(&cpu, 0xFF, sizeof(cpu));
+    memset(&cpu, 0x00, sizeof(cpu));
     cpu.reg16.pc = 0x0;
     imeFlag = false;
     instrSetCpuPtr(&cpu);
@@ -64,6 +64,17 @@ void cpuSkipBootrom(void)
     cpu.reg8.l = 0x4D;
     cpu.reg16.sp = 0xFFFE;
     cpu.reg16.pc = 0x100;
+    memset(&pBus->map.ioregs.lcd.control, 0x91, 1);
+    memset(&pBus->map.ioregs.lcd.stat, 0x85, 1);
+    memset(&pBus->map.ioregs.lcd.dma, 0xFF, 1);
+    memset(&pBus->map.ioregs.lcd.bgp, 0xFC, 1);
+    memset(&pBus->map.ioregs.joypad, 0xCF, 1);
+    memset(&pBus->map.ioregs.divRegister, 0x18, 1);
+    memset(&pBus->map.ioregs.timers.TAC, 0xF8, 1);
+    memset(&pBus->map.ioregs.intFlags, 0xE1, 1);
+    // todo: audio
+
+
 }
 
 /**
@@ -387,8 +398,6 @@ static int decodeCbPrefix()
                 bit_n_reg(3, A);
             }
             break;
-
-            break;
         }
         // BIT 4/5, reg
         case 0x06:
@@ -639,7 +648,7 @@ static int decodeCbPrefix()
             break;
         }
         // SET 4/5
-        case 0x0e:
+        case 0x0E:
         {
             if (lo < 0x06)
             {
@@ -713,6 +722,7 @@ static int decodeCbPrefix()
 
 int executeInstruction(uint8_t instr)
 {
+    static bool haltOnUnknown = false;
     bool is16 = false;
     int cycleCount = 0;
 
@@ -757,8 +767,7 @@ int executeInstruction(uint8_t instr)
             //     cycleCount = 2;
             // }
             cycleCount = 2;
-            write8(cpu.reg8.a, cpu.reg16.hl);
-            cpu.reg16.hl++;
+            write8(cpu.reg8.a, cpu.reg16.hl++);
             break;
         }
         case 0x32: // LD (HL-),A
@@ -772,8 +781,7 @@ int executeInstruction(uint8_t instr)
             //     cycleCount = 2;
             // }
             cycleCount = 2;
-            write8(cpu.reg8.a, cpu.reg16.hl);
-            cpu.reg16.hl--;
+            write8(cpu.reg8.a, cpu.reg16.hl--);
             break;
         }
         case 0x06: // LD B,d8
@@ -1138,15 +1146,12 @@ int executeInstruction(uint8_t instr)
         case 0xC9: // RET
         {
             ret();
-            cpu.reg16.pc++; // RET goes to the original calling address (which is already executed), so we need to increment by 3 since CALL is always 3 bytes long
-            is16 = true;
             cycleCount = 4;
             break;
         }
         case 0xD9: // RETI
         {
             ret();
-            cpu.reg16.pc--; // when RETI, the popped PC value is of an instruction that hasn't been executed yet, so don't increment at the end of the loop
             imeFlag = true;
             cycleCount = 4;
             break;
@@ -1154,28 +1159,28 @@ int executeInstruction(uint8_t instr)
 
         case 0xC0: // RET NZ
         {
-            if (!testFlag(FLAG_Z)) { ret(); cpu.reg16.pc++; is16 = true; }
+            if (!testFlag(FLAG_Z)) { ret(); }
             cycleCount = 4;
             break;
         }
 
         case 0xC8: // RET Z
         {
-            if (testFlag(FLAG_Z)) { ret(); cpu.reg16.pc++; is16 = true; }
+            if (testFlag(FLAG_Z)) { ret(); }
             cycleCount = 4;
             break;
         }
 
         case 0xD0: // RET NC
         {
-            if (!testFlag(FLAG_C)) { ret(); cpu.reg16.pc++; is16 = true; }
+            if (!testFlag(FLAG_C)) { ret(); }
             cycleCount = 4;
             break;
         }
 
         case 0xD8: // RET C
         {
-            if (testFlag(FLAG_C)) { ret(); cpu.reg16.pc++; is16 = true; }
+            if (testFlag(FLAG_C)) { ret(); }
             cycleCount = 4;
             break;
         }
@@ -1604,7 +1609,10 @@ int executeInstruction(uint8_t instr)
                 default:
                 {
                     printf("unknown instruction 0x%2x at 0x%04x\n", instr, cpu.reg16.pc);
-                    while (true);
+                    if (haltOnUnknown)
+                    {
+                        while (true);
+                    }
                 }
             }
 

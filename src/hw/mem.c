@@ -52,8 +52,14 @@ void unmapBootrom(void)
 
 void resetBus(void)
 {
-    memset(&addressBus, 0xFF, sizeof(addressBus));
-    addressBus.map.ioregs.joypad.dpadSelect = 1;
+    memset(&addressBus, 0x00, sizeof(addressBus));
+    memset(&addressBus.map.hram, 0xFF, HRAM_SIZE);
+    memset(&addressBus.map.wram, 0xFF, WRAM_SIZE);
+    memset(&addressBus.map.eram, 0xFF, ERAM_SIZE);
+    memset(&addressBus.map.echo, 0xFF, ECHO_SIZE);
+    memset(&addressBus.map.vram, 0xFF, VRAM_SIZE);
+    memset(&addressBus.map.oam, 0xFF, OAM_SIZE);
+    memset(&addressBus.map.ioregs.joypad, 0xFF, 1);
 }
 
 void overrideBus(bus_t *pBus)
@@ -101,11 +107,19 @@ void write8(uint8_t val, uint16_t addr)
         // costs 160 mcycles
     }
 #endif
+    if (addr < ROMN_SIZE * 2)
+    {
+        return;
+    }
     addressBus.bus[addr] = val;
 }
 
 void write16(uint16_t val, uint16_t addr)
 {
+    if (addr < ROMN_SIZE * 2)
+    {
+        return;
+    }
     addressBus.bus[addr]     = (uint8_t)(val & 0xFF);
     addressBus.bus[addr + 1] = (uint8_t)(val >> 8);
 }

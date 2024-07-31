@@ -357,13 +357,14 @@ void daa(void)
 void cpl(void)
 {
     setRegister8(A, ~pCpu->reg8.a);
-    resetFlag(FLAG_N);
-    resetFlag(FLAG_H);
+    setFlag(FLAG_N);
+    setFlag(FLAG_H);
 }
 
 void ccf(void)
 {
     if (testFlag(FLAG_C)) { resetFlag(FLAG_C); }
+    else { setFlag(FLAG_C); }
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 }
@@ -643,19 +644,16 @@ void rst_n(uint8_t val)
     pCpu->reg16.sp -= 2;
     write16(pCpu->reg16.pc, pCpu->reg16.sp);
     setRegister16(PC, (val * 8));
+
     isRSTReturn = true;
 }
 
 void ret(void)
 {
-    setRegister16(PC, (fetch16(pCpu->reg16.sp)));
+    setRegister16(PC, (fetch16(pCpu->reg16.sp) + isRSTReturn ? 0 : 2));
     pCpu->reg16.sp += 2;
 
-    if (isRSTReturn)
-    {
-        setRegister16(PC, pCpu->reg16.pc -= 2);
-        isRSTReturn = false;
-    }
+    isRSTReturn = false;
 }
 
 bool ret_cond(Flag flag, bool testSet)
@@ -807,7 +805,7 @@ static uint8_t _srl(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 7 of previous value
+    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
     uint8_t ret = val >> 1;
 
     if (ret == 0) { setFlag(FLAG_Z); }

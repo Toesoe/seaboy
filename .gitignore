@@ -61,6 +61,6 @@ build/
 
 # roms
 *.gb
-gb-test-roms-master
+testroms
 mts
 src/instructions
