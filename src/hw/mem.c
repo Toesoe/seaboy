@@ -69,6 +69,7 @@ void overrideBus(bus_t *pBus)
 
 uint8_t fetch8(uint16_t addr)
 {
+    if (addr == 0xFF00) return 0xFF;
     return addressBus.bus[addr];
 }
 uint16_t fetch16(uint16_t addr)
@@ -76,6 +77,12 @@ uint16_t fetch16(uint16_t addr)
     return (uint16_t)(addressBus.bus[addr + 1] << 8) | addressBus.bus[addr];
 }
 
+/**
+ * @brief write 8-bit value to address
+ * 
+ * @param val value to write
+ * @param addr address to write to
+ */
 void write8(uint8_t val, uint16_t addr)
 {
 #ifndef TEST
@@ -114,6 +121,12 @@ void write8(uint8_t val, uint16_t addr)
     addressBus.bus[addr] = val;
 }
 
+/**
+ * @brief write 16-bit val to addr
+ * 
+ * @param val value to write
+ * @param addr address to write to
+ */
 void write16(uint16_t val, uint16_t addr)
 {
     if (addr < ROMN_SIZE * 2)

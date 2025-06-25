@@ -114,7 +114,7 @@ bool testFlag(Flag);
 /**
  * @brief step the program counter
  */
-void stepCpu(bool);
+void stepCpu(int);
 
 /**
  * @brief set PC to a specific address

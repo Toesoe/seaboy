@@ -25,7 +25,7 @@ void instrSetCpuPtr(cpu_t *);
  * @brief load 8-bit register with immediate value
  * 
  */
-void ld_reg8_imm(Register8, uint8_t);
+void ld_reg8_imm(Register8);
 
 /**
  * @brief load 8-bit register from mem address
@@ -46,10 +46,10 @@ void ld_reg8_reg8(Register8, Register8);
 void ld_addr_reg8(uint16_t, Register8);
 
 /**
- * @brief set value at mem address to immediate value
+ * @brief set value at mem address to immediate 8-bit value
  * 
  */
-void ld_addr_imm(uint16_t, uint8_t);
+void ld_addr_imm8(uint16_t);
 
 /**
  * @brief load-and-decrement register a from memory address in HL
@@ -88,10 +88,16 @@ void ldh_offset_mem_a(uint8_t);
 void ldh_a_offset_mem(uint8_t);
 
 /**
- * @brief load a 16-bit register with an immediate value
+ * @brief load a 16-bit register using immediate
  * 
  */
-void ld_reg16_imm(Register16, uint16_t);
+void ld_reg16_imm(Register16);
+
+/**
+ * @brief set value at mem address to immediate 16-bit value
+ * 
+ */
+void ld_addr_imm16(uint16_t);
 
 /**
  * @brief set HL register to SP + an offfset
@@ -281,16 +287,15 @@ void set_n_addr(uint8_t, uint16_t);
 void reset_n_reg(uint8_t, Register8);
 void reset_n_addr(uint8_t, uint16_t);
 
-void jmp_nn(uint16_t);
-bool jmp_nn_cond(uint16_t, Flag, bool);
+void jmp_imm16();
+bool jmp_imm16_cond(Flag, bool);
 void jmp_hl(void);
-void jr_n(uint8_t);
-void jr_n_signed(int8_t);
-bool jr_n_cond(int8_t, Flag, bool);
-bool jr_n_cond_signed(int8_t, Flag, bool);
+void jr_imm8();
+bool jr_imm8_cond(Flag, bool);
 
-void call_nn(uint16_t);
-bool call_nn_cond(uint16_t, Flag, bool);
+void call_imm16();
+bool call_imm16_cond(Flag, bool);
+void call_irq_subroutine(uint8_t);
 void rst_n(uint8_t);
 void ret(void);
 bool ret_cond(Flag, bool);

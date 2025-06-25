@@ -32,6 +32,9 @@ void runTests(void)
     bus_t bus = {0};
     bus_t busFinal = {0};
 
+    cJSON *json_array = NULL, *json_item = NULL;
+    char *content = NULL;
+
     instrSetCpuPtr(&cpu);
 
     while ((pEntry = readdir(pTestDir)) != NULL)
@@ -46,71 +49,73 @@ void runTests(void)
         //printf("name %s\n", fullpath);
         FILE *pFile = fopen(fullpath, "r");
 
-        fseek(pFile, 0, SEEK_END);
-        long length = ftell(pFile);
-        fseek(pFile, 0, SEEK_SET);
-
-        char *content = malloc(length+1);
-        fread(content, 1, length, pFile);
-        content[length] = '\0';
-
-        cJSON *json_array = cJSON_Parse(content);
-
-        cJSON *json_item = NULL;
-        cJSON_ArrayForEach(json_item, json_array)
+        if (pFile)
         {
-            if (cJSON_IsObject(json_item))
+            fseek(pFile, 0, SEEK_END);
+            long length = ftell(pFile);
+            fseek(pFile, 0, SEEK_SET);
+
+            content = malloc(length+1);
+            fread(content, 1, length, pFile);
+            content[length] = '\0';
+
+            json_array = cJSON_Parse(content);
+
+            cJSON_ArrayForEach(json_item, json_array)
             {
-                overrideBus(&bus);
-                resetCpu();
-                overrideCpu(&cpu);
-
-                int posCounter = 0;
-
-                // Parse and print "initial" object
-                cJSON *initial = cJSON_GetObjectItemCaseSensitive(json_item, "initial");
-                set_state(initial, &cpu, &bus);
-
-                // Parse and print "final" object
-                cJSON *final = cJSON_GetObjectItemCaseSensitive(json_item, "final");
-                set_state(final, &finalCpu, &busFinal);
-
-                cJSON *cycles = cJSON_GetObjectItemCaseSensitive(json_item, "cycles");
-
-                cJSON *cycleEntry = NULL;
-
-                cJSON_ArrayForEach(cycleEntry, cycles)
+                if (cJSON_IsObject(json_item))
                 {
-                    executeInstruction(bus.bus[cpu.reg16.pc]);
-                    posCounter++;
-                }
+                    overrideBus(&bus);
+                    resetCpu();
+                    overrideCpu(&cpu);
 
-                if (!memcmp(&cpu, &finalCpu, sizeof(cpu_t)))
-                {
-                    printf("cpu mismatch in instr file %s, name %d\n", fullpath, posCounter);
-                }
+                    int posCounter = 0;
 
-                if (checkBus && passedBus)
-                {
-                    if (!memcmp(&bus, &busFinal, sizeof(bus_t)))
+                    // Parse and print "initial" object
+                    cJSON *initial = cJSON_GetObjectItemCaseSensitive(json_item, "initial");
+                    set_state(initial, &cpu, &bus);
+
+                    // Parse and print "final" object
+                    cJSON *final = cJSON_GetObjectItemCaseSensitive(json_item, "final");
+                    set_state(final, &finalCpu, &busFinal);
+
+                    cJSON *cycles = cJSON_GetObjectItemCaseSensitive(json_item, "cycles");
+
+                    cJSON *cycleEntry = NULL;
+
+                    cJSON_ArrayForEach(cycleEntry, cycles)
                     {
-                        printf("bus mismatches in instr file %s:\n", fullpath);
-                        for (unsigned int i = 0; i < GB_BUS_SIZE; i++)
+                        executeInstruction(bus.bus[cpu.reg16.pc]);
+                        posCounter++;
+                    }
+
+                    if (!memcmp(&cpu, &finalCpu, sizeof(cpu_t)))
+                    {
+                        printf("cpu mismatch in instr file %s, name %d\n", fullpath, posCounter);
+                    }
+
+                    if (checkBus && passedBus)
+                    {
+                        if (!memcmp(&bus, &busFinal, sizeof(bus_t)))
                         {
-                            if (bus.bus[i] != busFinal.bus[i])
+                            printf("bus mismatches in instr file %s:\n", fullpath);
+                            for (unsigned int i = 0; i < GB_BUS_SIZE; i++)
                             {
-                                printf("value 0x%2x != 0x%2x at addr 0x%04x\n", bus.bus[i], busFinal.bus[i], i);
+                                if (bus.bus[i] != busFinal.bus[i])
+                                {
+                                    printf("value 0x%2x != 0x%2x at addr 0x%04x\n", bus.bus[i], busFinal.bus[i], i);
+                                }
                             }
+                            passedBus = false;
                         }
-                        passedBus = false;
                     }
                 }
             }
         }
 
-        cJSON_Delete(json_array);
-        fclose(pFile);
-        free(content);
+        if (json_array) { cJSON_Delete(json_array); }
+        if (pFile) { fclose(pFile); }
+        if (content != nullptr) { free(content); }
     }
 }
 

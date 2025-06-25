@@ -55,6 +55,9 @@ dkms.conf
 # Ninja stuff
 .ninja_log
 
+# clangd
+.cache
+
 # vscode stuff
 .vscode/
 build/

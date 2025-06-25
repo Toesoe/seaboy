@@ -16,12 +16,11 @@
 
 static cpu_t *pCpu;
 
-#define CHECK_HALF_CARRY_ADD8(a, b) (((((a) & 0xf) + ((b) & 0xf)) & 0x10) == 0x10)
-#define CHECK_HALF_CARRY_SUB8(a, b) (((((a) & 0xf) - ((b) & 0xf)) & 0x10) == 0x10)
+#define CHECK_HALF_CARRY_ADD8(a, b) (((((a) & 0xF) + ((b) & 0xF)) & 0x10) == 0x10)
+#define CHECK_HALF_CARRY_SUB8(a, b) (((a) & 0xF) < ((b) & 0xF))
 
-#define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xfff) + ((b) & 0xfff)) & 0x1000) == 0x1000)
-#define CHECK_HALF_CARRY_SUB16(a, b) (((((a) & 0xfff) - ((b) & 0xfff)) & 0x1000) == 0x1000)
-
+#define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xFFF) + ((b) & 0xFFF)) & 0x1000) == 0x1000)
+#define CHECK_HALF_CARRY_SUB16(a, b) (((a) & 0xFFF) < ((b) & 0xFFF))
 
 // static defs
 static uint8_t _rl(uint8_t val);
@@ -32,8 +31,6 @@ static uint8_t _rrc(uint8_t val);
 static uint8_t _sra(uint8_t val);
 static uint8_t _srl(uint8_t val);
 
-static bool isRSTReturn = false;
-
 void instrSetCpuPtr(cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
@@ -41,9 +38,9 @@ void instrSetCpuPtr(cpu_t *pCpuSet)
 
 // 8 bit loads
 
-void ld_reg8_imm(Register8 reg, uint8_t val)
+void ld_reg8_imm(Register8 reg)
 {
-    setRegister8(reg, val);
+    setRegister8(reg, fetch8(pCpu->reg16.pc + 1));
 }
 
 void ld_reg8_addr(Register8 left, uint16_t addr)
@@ -56,14 +53,20 @@ void ld_reg8_reg8(Register8 left, Register8 right)
     setRegister8(left, pCpu->reg8_arr[right]);
 }
 
-void ld_addr_reg8(uint16_t addr, Register8 right)
+/**
+ * @brief set value at mem address to 8-bit reg value
+ * 
+ * @param addr address to write to
+ * @param reg register containing value to write
+ */
+void ld_addr_reg8(uint16_t addr, Register8 reg)
 {
-    write8(pCpu->reg8_arr[right], addr);
+    write8(pCpu->reg8_arr[reg], addr);
 }
 
-void ld_addr_imm(uint16_t addr, uint8_t val)
+void ld_addr_imm8(uint16_t addr)
 {
-    write8(val, addr);
+    write8(fetch8(pCpu->reg16.pc + 1), addr);
 }
 
 void ldd_a_hl(void)
@@ -98,22 +101,46 @@ void ldh_a_offset_mem(uint8_t offset)
 
 // 16-bit loads
 
-void ld_reg16_imm(Register16 reg, uint16_t val)
+/**
+ * @brief load 16-bit immediate value to register reg
+ * 
+ * @param reg register to load into
+ */
+void ld_reg16_imm(Register16 reg)
 {
-    setRegister16(reg, val);
+    setRegister16(reg, fetch16(pCpu->reg16.pc + 1));
 }
 
-void ldhl_sp_offset(uint8_t offset)
+/**
+ * @brief load 16-bit immediate value to memory address addr
+ * 
+ * @param addr memory address to load to
+ */
+void ld_addr_imm16(uint16_t addr)
 {
-    setRegister16(HL, (uint16_t)(pCpu->reg16.sp + offset));
+    write16(fetch16(pCpu->reg16.pc + 1), addr);
 }
 
+/**
+ * @brief push a 16-bit register's value to the stack
+ *
+ * @note takes care of stack pointer decrease
+ * 
+ * @param reg register which needs its value pushed on the stack
+ */
 void push_reg16(Register16 reg)
 {
     setRegister16(SP,  pCpu->reg16.sp - 2);
     write16(pCpu->reg16_arr[reg], pCpu->reg16.sp);
 }
 
+/**
+ * @brief pop a 16-bit value from the stack to register reg
+ *
+ * @note takes care of stack pointer increase
+ * 
+ * @param reg register which gains a value from the stack
+ */
 void pop_reg16(Register16 reg)
 {
     setRegister16(reg, fetch16(pCpu->reg16.sp));
@@ -272,6 +299,11 @@ void dec8_mem(uint16_t addr)
 
 // 16-bit arithmetic
 
+/**
+ * @brief add val to HL
+ * 
+ * @param val 
+ */
 void add16_hl_n(uint16_t val)
 {
     uint32_t sum = pCpu->reg16.hl + val;
@@ -519,83 +551,77 @@ void reset_n_addr(uint8_t bit, uint16_t addr)
 
 // jumps
 
-void jmp_nn(uint16_t addr)
+/**
+ * @brief perform nonrelative unconditional jump to 16-bit immediate value
+ * 
+ */
+void jmp_imm16()
 {
-    setRegister16(PC, addr);
+    setRegister16(PC, fetch16(pCpu->reg16.pc + 1));
 }
 
 /**
- * @brief perform conditional jump
+ * @brief perform nonrelative conditional jump to 16-bit immediate value
  * 
- * @param addr addr to jump to
  * @param flag flag to test
  * @param testSet if true, will execute jump if specified flag is set
- * @return true if we jumped
+ * @return true     if jumped
+ * @return false    if not (test was false)
  */
-bool jmp_nn_cond(uint16_t addr, Flag flag, bool testSet)
+bool jmp_imm16_cond(Flag flag, bool testSet)
 {
     bool ret = false;
 
     if (testFlag(flag))
     {
-        if (testSet) { jmp_nn(addr); ret = true; }
+        if (testSet) { jmp_imm16(); ret = true; }
     }
     else
     {
-        if (!testSet) { jmp_nn(addr); ret = true; }
+        if (!testSet) { jmp_imm16(); ret = true; }
     }
 
     return ret;
 }
 
+/**
+ * @brief perform nonrelative unconditional jump to address specified in HL
+ * 
+ */
 void jmp_hl(void)
 {
     setRegister16(PC, pCpu->reg16.hl);
 }
 
-void jr_n(uint8_t val)
+/**
+ * @brief perform relative unconditional jump to signed 8-bit immediate
+ * 
+ */
+void jr_imm8()
 {
-    setRegister16(PC, pCpu->reg16.pc + val);
-}
-
-void jr_n_signed(int8_t val)
-{
-    setRegister16(PC, pCpu->reg16.pc + (signed char)val);
+    // add 2 for JR size
+    setRegister16(PC, pCpu->reg16.pc + 2 + (int8_t)fetch8(pCpu->reg16.pc + 1));
 }
 
 /**
- * @return true if we jumped
+ * @brief perform relative conditional jump to signed 8-bit immediate
+ * 
+ * @param flag      flag to test
+ * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
+ * @return true     if jumped
+ * @return false    if not (test was false)
  */
-bool jr_n_cond(int8_t val, Flag flag, bool testSet)
+bool jr_imm8_cond(Flag flag, bool testSet)
 {
     bool ret = false;
 
     if (testFlag(flag))
     {
-        if (testSet) { jr_n(val); ret = true; }
+        if (testSet) { jr_imm8(); ret = true; }
     }
     else
     {
-        if (!testSet) { jr_n(val); ret = true; }
-    }
-
-    return ret;
-}
-
-/**
- * @return true if we jumped
- */
-bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
-{
-    bool ret = false;
-
-    if (testFlag(flag))
-    {
-        if (testSet) { jr_n_signed(val); ret = true; }
-    }
-    else
-    {
-        if (!testSet) { jr_n_signed(val); ret = true; }
+        if (!testSet) { jr_imm8(); ret = true; }
     }
 
     return ret;
@@ -603,19 +629,32 @@ bool jr_n_cond_signed(int8_t val, Flag flag, bool testSet)
 
 // calls
 
-void call_nn(uint16_t val)
+/**
+ * @brief call subroutine at unsigned 16-bit immediate
+ *
+ * @note pushes address of first instr after subroutine to stack, decrements SP by 2
+ */
+void call_imm16()
 {
-    if (((uint32_t)(pCpu->reg16.sp - 2)) > UINT16_MAX)
-    {
-        printf("new SP invalid!\n");
-        return;
-    }
-    pCpu->reg16.sp -= 2;
-    write16(pCpu->reg16.pc, pCpu->reg16.sp);
-    setRegister16(PC, val);
+    // decrement SP
+    setRegister16(SP, pCpu->reg16.sp - 2);
+
+    // save PC + 3
+    write16(pCpu->reg16.pc + 3, pCpu->reg16.sp);
+
+    // set new PC to imm16
+    setRegister16(PC, fetch16(pCpu->reg16.pc + 1));
 }
 
-bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
+/**
+ * @brief conditionally call subroutine at unsigned 16-bit immediate
+ * 
+ * @param flag      flag to test
+ * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
+ * @return true     if jumped
+ * @return false    if not (test was false)
+ */
+bool call_imm16_cond(Flag flag, bool testSet)
 {
     bool ret = false;
 
@@ -623,7 +662,7 @@ bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
     {
         if (testSet) 
         {
-            call_nn(val);
+            call_imm16();
             ret = true;
         }
     }
@@ -631,7 +670,7 @@ bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
     {
         if (!testSet) 
         {
-            call_nn(val);
+            call_imm16();
             ret = true;
         }
     }
@@ -639,21 +678,40 @@ bool call_nn_cond(uint16_t val, Flag flag, bool testSet)
     return ret;
 }
 
-void rst_n(uint8_t val)
+void call_irq_subroutine(uint8_t addr)
 {
-    pCpu->reg16.sp -= 2;
-    write16(pCpu->reg16.pc, pCpu->reg16.sp);
-    setRegister16(PC, (val * 8));
+    // decrement SP
+    setRegister16(SP, pCpu->reg16.sp - 2);
 
-    isRSTReturn = true;
+    // save PC to new SP addr (not executed yet)
+    write16(pCpu->reg16.pc, pCpu->reg16.sp);
+
+    // set new PC to addr
+    setRegister16(PC, addr);
 }
 
+/**
+ * @brief call RST page between 0 and 8
+ *
+ * @note stores next valid PC on stack. RSTs are at 0x00, 0x08, 0x10, etc
+ * 
+ * @param addr RST addr to call
+ */
+void rst_n(uint8_t addr)
+{
+    pCpu->reg16.sp -= 2;
+    write16(pCpu->reg16.pc + 1, pCpu->reg16.sp);
+    setRegister16(PC, addr);
+}
+
+/**
+ * @brief return from subroutine. pulls next PC address from stack
+ * 
+ */
 void ret(void)
 {
-    setRegister16(PC, (fetch16(pCpu->reg16.sp) + isRSTReturn ? 0 : 2));
-    pCpu->reg16.sp += 2;
-
-    isRSTReturn = false;
+    setRegister16(PC, fetch16(pCpu->reg16.sp));
+    setRegister16(SP, pCpu->reg16.sp + 2);
 }
 
 bool ret_cond(Flag flag, bool testSet)

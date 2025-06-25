@@ -9,6 +9,10 @@
  * 
  */
 
+#define CYCLES_PER_FRAME 70224
+#define FRAME_DURATION_NS 16666667L  // ~16.67ms in nanoseconds
+
+
 #include "hw/mem.h"
 #include "hw/cpu.h"
 #include "hw/ppu.h"
@@ -19,6 +23,8 @@
 
 #include <string.h>
 #include <stdio.h>
+
+#include <time.h>
 
 const uint8_t bootrom_bin[] = {
   /* 0x00 */ 0x31, 0xfe, 0xff, 0xaf, 0x21, 0xff, 0x9f, 0x32, 0xcb, 0x7c, 0x20, 0xfb, 0x21, 0x26, 0xff, 0x0e,
@@ -40,6 +46,29 @@ const uint8_t bootrom_bin[] = {
 };
 
 size_t bootrom_bin_len = 0xFF;
+
+uint64_t getTimeNs()
+{
+  struct timespec ts;
+  clock_gettime (CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+void throttle_to_60fps(uint64_t start_ns)
+{
+  uint64_t end_ns = getTimeNs();
+  int64_t elapsed = (int64_t)(end_ns - start_ns);
+
+  if (elapsed < FRAME_DURATION_NS)
+    {
+      int64_t sleep_ns = FRAME_DURATION_NS - elapsed;
+
+      // Convert to timespec for nanosleep
+      struct timespec req = { .tv_sec = sleep_ns / 1000000000L,
+                              .tv_nsec = sleep_ns % 1000000000L };
+      nanosleep(&req, NULL);
+    }
+}
 
 int main()
 {
@@ -69,38 +98,40 @@ int main()
 
     while (true)
     {
-        int mCycles = 0;
-        uint8_t opcode = pBus->bus[pCpu->reg16.pc];
+        uint64_t frame_start = getTimeNs();
+        int cycles_this_frame = 0;
 
-        printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
-
-        if (!previousInstructionSetIME)
+        while (cycles_this_frame < CYCLES_PER_FRAME)
         {
-            mCycles += handleInterrupts();
-        }
+            int mCycles = 0;
+            uint8_t opcode = pBus->bus[pCpu->reg16.pc];
+            
+            //printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
 
-        previousInstructionSetIME = false;
-
-        // this is done to delay executing interrupts by one cycle
-        if (pBus->bus[pCpu->reg16.pc] == 0xFB)
-        {
-            previousInstructionSetIME = true;
-        }
-
-        if (!checkHalted())
-        {
-            if (pCpu->reg16.pc == 0x69a4)
+            // this is done to delay executing interrupts by one cycle: EI sets IME after delay
+            if (pBus->bus[pCpu->reg16.pc] == 0xFB)
             {
-                __asm("nop");
+                previousInstructionSetIME = true;
             }
-            //memcpy(&prevState, pCpu, sizeof(cpu_t));
-            //memcpy(&prevBus, pBus, sizeof(bus_t));
-            mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
+
+            if (!checkHalted())
+            {
+                mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
+            }
+
+            if (!previousInstructionSetIME)
+            {
+                mCycles += handleInterrupts();
+            }
+
+            previousInstructionSetIME = false;
+
+            cycles_this_frame += mCycles;
+
+            handleTimers(mCycles);
+            ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
         }
-
-        handleTimers(mCycles);
-
-        ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
+        throttle_to_60fps(frame_start);
 
         if (pBus->map.ioregs.disableBootrom == 1)
         {
