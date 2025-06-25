@@ -4,16 +4,16 @@
  * @brief seaboy SM83 emulation
  * @version 0.1
  * @date 2023-06-13
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 
 #ifndef _CPU_H_
 #define _CPU_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef enum _Flag
 {
@@ -69,18 +69,19 @@ typedef union __attribute__((__packed__))
         // uint8_t e;
         // uint8_t h;
         // uint8_t l;
-        uint8_t f;
-        uint8_t a;
-        uint8_t c;
-        uint8_t b;
-        uint8_t e;
-        uint8_t d;
-        uint8_t l;
-        uint8_t h;
+        uint8_t  f;
+        uint8_t  a;
+        uint8_t  c;
+        uint8_t  b;
+        uint8_t  e;
+        uint8_t  d;
+        uint8_t  l;
+        uint8_t  h;
         uint32_t _nouse_sp_pc;
     } reg8;
+
     uint16_t reg16_arr[6];
-    uint8_t reg8_arr[12];
+    uint8_t  reg8_arr[12];
 } cpu_t;
 
 // functions
@@ -98,7 +99,7 @@ void cpuSkipBootrom(void);
 
 /**
  * @brief set a specific flag
-*/
+ */
 void setFlag(Flag);
 
 /**
@@ -146,9 +147,9 @@ bool checkHalted();
  * @brief map instruction to actual decoding function
  * @return total execution cycles used for the last instruction
  */
-int executeInstruction(uint8_t);
+int  executeInstruction(uint8_t);
 
-int handleInterrupts(void);
+int  handleInterrupts(void);
 
 void handleTimers(int);
 

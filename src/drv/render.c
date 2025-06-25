@@ -4,9 +4,9 @@
  * @brief seaboy render driver
  * @version 0.1
  * @date 2023-06-13
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 
 #include <stdio.h>
@@ -18,36 +18,43 @@
 #include "render.h"
 
 ETilePalette_t example_data[DISP_HEIGHT][DISP_WIDTH] = {
-    {BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY},
-    {WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK},
-    {LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE},
-    {DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY},
-    {BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY},
-    {WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK},
-    {LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE},
-    {DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY}
+    { BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY },
+    { WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK },
+    { LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE },
+    { DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY },
+    { BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY },
+    { WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK },
+    { LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE },
+    { DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY }
 };
 
 static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
 static uint32_t       pixelbuffer[DISP_WIDTH * DISP_HEIGHT];
 
-static SDL_Window *g_pRenderWindow = NULL;
-static SDL_Renderer *g_pRenderer = NULL;
-static SDL_Texture *g_pFbTexture = NULL;
+static SDL_Window    *g_pRenderWindow = NULL;
+static SDL_Renderer  *g_pRenderer     = NULL;
+static SDL_Texture   *g_pFbTexture    = NULL;
 
-static uint32_t map_palette_to_rgba(ETilePalette_t color) {
-    switch (color) {
-        case BLACK: return 0x0f380fFF; // Black
-        case LGRAY: return 0x8bac0fFF; // Light Gray
-        case DGRAY: return 0x306230FF; // Dark Gray
-        case WHITE: return 0x9bbc0fFF; // White
-        default:    return 0x9bbc0fFF; // Default to black
+static uint32_t       map_palette_to_rgba(ETilePalette_t color)
+{
+    switch (color)
+    {
+        case BLACK:
+            return 0x0f380fFF; // Black
+        case LGRAY:
+            return 0x8bac0fFF; // Light Gray
+        case DGRAY:
+            return 0x306230FF; // Dark Gray
+        case WHITE:
+            return 0x9bbc0fFF; // White
+        default:
+            return 0x9bbc0fFF; // Default to black
     }
 }
 
 /**
  * @brief set a pixel value at a specific screen x/y location
- * 
+ *
  * @param pPixel pointer to pixel value
  */
 void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
@@ -71,8 +78,10 @@ void setPixel(SPixel_t *pPixel)
 void debugFramebuffer(void)
 {
     // Update pixelbuffer from framebuffer
-    for (int y = 0; y < DISP_HEIGHT; ++y) {
-        for (int x = 0; x < DISP_WIDTH; ++x) {
+    for (int y = 0; y < DISP_HEIGHT; ++y)
+    {
+        for (int x = 0; x < DISP_WIDTH; ++x)
+        {
             pixelbuffer[y * DISP_WIDTH + x] = map_palette_to_rgba(framebuffer[y][x]);
         }
     }
@@ -98,14 +107,11 @@ void initRenderWindow(void)
         exit(EXIT_FAILURE);
     }
 
-    g_pRenderWindow = SDL_CreateWindow("Framebuffer Example",
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          DISP_WIDTH * 4,
-                                          DISP_HEIGHT * 4,
-                                          SDL_WINDOW_SHOWN);
+    g_pRenderWindow = SDL_CreateWindow("Framebuffer Example", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                       DISP_WIDTH * 4, DISP_HEIGHT * 4, SDL_WINDOW_SHOWN);
 
-    if (!g_pRenderWindow) {
+    if (!g_pRenderWindow)
+    {
         fprintf(stderr, "Window could not be created! SDL_Error: %s\n", SDL_GetError());
         SDL_Quit();
         exit(EXIT_FAILURE);
@@ -113,18 +119,20 @@ void initRenderWindow(void)
 
     g_pRenderer = SDL_CreateRenderer(g_pRenderWindow, -1, SDL_RENDERER_ACCELERATED);
 
-    if (!g_pRenderer) {
+    if (!g_pRenderer)
+    {
         fprintf(stderr, "Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
         SDL_DestroyWindow(g_pRenderWindow);
         SDL_Quit();
         exit(EXIT_FAILURE);
     }
 
-    //SDL_RenderSetLogicalSize(g_pRenderer, DISP_WIDTH * 4, DISP_HEIGHT * 4);
+    // SDL_RenderSetLogicalSize(g_pRenderer, DISP_WIDTH * 4, DISP_HEIGHT * 4);
 
     g_pFbTexture = SDL_CreateTexture(g_pRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 160, 144);
 
-    if (!g_pFbTexture) {
+    if (!g_pFbTexture)
+    {
         fprintf(stderr, "Texture could not be created! SDL_Error: %s\n", SDL_GetError());
         SDL_DestroyRenderer(g_pRenderer);
         SDL_DestroyWindow(g_pRenderWindow);

@@ -72,13 +72,13 @@ void throttle_to_60fps(uint64_t start_ns)
 
 int main()
 {
-    //runTests();
+    // runTests();
     resetBus();
-    bus_t *pBus = pGetBusPtr();
-    const cpu_t *pCpu = getCpuObject();
+    bus_t       *pBus                      = pGetBusPtr();
+    const cpu_t *pCpu                      = getCpuObject();
 
-    bool skipBootrom = false;
-    bool previousInstructionSetIME = false;
+    bool         skipBootrom               = false;
+    bool         previousInstructionSetIME = false;
     // cpu_t prevState;
     // bus_t prevBus;
 
@@ -93,20 +93,22 @@ int main()
         // overlay with bootrom
         memcpy(&pBus->bus[0], &bootrom_bin[0], bootrom_bin_len + 1);
     }
-    else { cpuSkipBootrom(); }
-    
+    else
+    {
+        cpuSkipBootrom();
+    }
 
     while (true)
     {
-        uint64_t frame_start = getTimeNs();
-        int cycles_this_frame = 0;
+        uint64_t frame_start       = getTimeNs();
+        int      cycles_this_frame = 0;
 
         while (cycles_this_frame < CYCLES_PER_FRAME)
         {
-            int mCycles = 0;
-            uint8_t opcode = pBus->bus[pCpu->reg16.pc];
-            
-            //printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
+            int     mCycles = 0;
+            uint8_t opcode  = pBus->bus[pCpu->reg16.pc];
+
+            // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
 
             // this is done to delay executing interrupts by one cycle: EI sets IME after delay
             if (pBus->bus[pCpu->reg16.pc] == 0xFB)
@@ -131,6 +133,7 @@ int main()
             handleTimers(mCycles);
             ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
         }
+
         throttle_to_60fps(frame_start);
 
         if (pBus->map.ioregs.disableBootrom == 1)

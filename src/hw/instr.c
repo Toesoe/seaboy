@@ -4,9 +4,9 @@
  * @brief seaboy SM83 instructions
  * @version 0.1
  * @date 2023-06-13
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #include "instr.h"
 
@@ -16,8 +16,8 @@
 
 static cpu_t *pCpu;
 
-#define CHECK_HALF_CARRY_ADD8(a, b) (((((a) & 0xF) + ((b) & 0xF)) & 0x10) == 0x10)
-#define CHECK_HALF_CARRY_SUB8(a, b) (((a) & 0xF) < ((b) & 0xF))
+#define CHECK_HALF_CARRY_ADD8(a, b)  (((((a) & 0xF) + ((b) & 0xF)) & 0x10) == 0x10)
+#define CHECK_HALF_CARRY_SUB8(a, b)  (((a) & 0xF) < ((b) & 0xF))
 
 #define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xFFF) + ((b) & 0xFFF)) & 0x1000) == 0x1000)
 #define CHECK_HALF_CARRY_SUB16(a, b) (((a) & 0xFFF) < ((b) & 0xFFF))
@@ -31,7 +31,7 @@ static uint8_t _rrc(uint8_t val);
 static uint8_t _sra(uint8_t val);
 static uint8_t _srl(uint8_t val);
 
-void instrSetCpuPtr(cpu_t *pCpuSet)
+void           instrSetCpuPtr(cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
 }
@@ -55,7 +55,7 @@ void ld_reg8_reg8(Register8 left, Register8 right)
 
 /**
  * @brief set value at mem address to 8-bit reg value
- * 
+ *
  * @param addr address to write to
  * @param reg register containing value to write
  */
@@ -103,7 +103,7 @@ void ldh_a_offset_mem(uint8_t offset)
 
 /**
  * @brief load 16-bit immediate value to register reg
- * 
+ *
  * @param reg register to load into
  */
 void ld_reg16_imm(Register16 reg)
@@ -113,7 +113,7 @@ void ld_reg16_imm(Register16 reg)
 
 /**
  * @brief load 16-bit immediate value to memory address addr
- * 
+ *
  * @param addr memory address to load to
  */
 void ld_addr_imm16(uint16_t addr)
@@ -125,12 +125,12 @@ void ld_addr_imm16(uint16_t addr)
  * @brief push a 16-bit register's value to the stack
  *
  * @note takes care of stack pointer decrease
- * 
+ *
  * @param reg register which needs its value pushed on the stack
  */
 void push_reg16(Register16 reg)
 {
-    setRegister16(SP,  pCpu->reg16.sp - 2);
+    setRegister16(SP, pCpu->reg16.sp - 2);
     write16(pCpu->reg16_arr[reg], pCpu->reg16.sp);
 }
 
@@ -138,7 +138,7 @@ void push_reg16(Register16 reg)
  * @brief pop a 16-bit value from the stack to register reg
  *
  * @note takes care of stack pointer increase
- * 
+ *
  * @param reg register which gains a value from the stack
  */
 void pop_reg16(Register16 reg)
@@ -190,7 +190,7 @@ void sub8_n_a(uint8_t val)
 
 void sbc8_a_n(uint8_t val)
 {
-    uint8_t carry = testFlag(FLAG_C) ? 1 : 0; // Determine if there's a carry from a previous operation
+    uint8_t carry  = testFlag(FLAG_C) ? 1 : 0; // Determine if there's a carry from a previous operation
 
     int16_t result = pCpu->reg8.a - val - carry; // Perform the subtraction with borrow
 
@@ -251,7 +251,7 @@ void cp8_a_n(uint8_t val)
 
 void inc8_reg(Register8 reg)
 {
-    uint8_t value = pCpu->reg8_arr[reg];
+    uint8_t value  = pCpu->reg8_arr[reg];
 
     uint8_t result = value + 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
@@ -263,7 +263,7 @@ void inc8_reg(Register8 reg)
 
 void dec8_reg(Register8 reg)
 {
-    uint8_t value = pCpu->reg8_arr[reg];
+    uint8_t value  = pCpu->reg8_arr[reg];
 
     uint8_t result = value - 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
@@ -275,7 +275,7 @@ void dec8_reg(Register8 reg)
 
 void inc8_mem(uint16_t addr)
 {
-    uint8_t value = fetch8(addr);
+    uint8_t value  = fetch8(addr);
 
     uint8_t result = value + 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
@@ -287,7 +287,7 @@ void inc8_mem(uint16_t addr)
 
 void dec8_mem(uint16_t addr)
 {
-    uint8_t value = fetch8(addr);
+    uint8_t value  = fetch8(addr);
 
     uint8_t result = value - 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
@@ -301,8 +301,8 @@ void dec8_mem(uint16_t addr)
 
 /**
  * @brief add val to HL
- * 
- * @param val 
+ *
+ * @param val
  */
 void add16_hl_n(uint16_t val)
 {
@@ -310,7 +310,7 @@ void add16_hl_n(uint16_t val)
 
     (sum > UINT16_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     CHECK_HALF_CARRY_ADD16(pCpu->reg16.hl, val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
-    
+
     resetFlag(FLAG_N);
 
     setRegister16(HL, (uint16_t)sum);
@@ -361,7 +361,7 @@ void swap8_addr(uint16_t addr)
 /**
  * @brief bcd conversion of value in reg a
  * @note  this instruction is weird. stole the implementation from https://forums.nesdev.org/viewtopic.php?t=15944
- * 
+ *
  */
 void daa(void)
 {
@@ -370,14 +370,27 @@ void daa(void)
     if (!testFlag(FLAG_N))
     {
         // after an addition, adjust if (half-)carry occurred or if result is out of bounds
-        if (testFlag(FLAG_C) || pCpu->reg8.a > 0x99) { aVal += 0x60; setFlag(FLAG_C); }
-        if (testFlag(FLAG_H) || (pCpu->reg8.a & 0x0f) > 0x09) { aVal += 0x6; }
+        if (testFlag(FLAG_C) || pCpu->reg8.a > 0x99)
+        {
+            aVal += 0x60;
+            setFlag(FLAG_C);
+        }
+        if (testFlag(FLAG_H) || (pCpu->reg8.a & 0x0f) > 0x09)
+        {
+            aVal += 0x6;
+        }
     }
     else
     {
         // after a subtraction, only adjust if (half-)carry occurred
-        if (testFlag(FLAG_C)) { aVal -= 0x60; }
-        if (testFlag(FLAG_H)) { aVal -= 0x6; }
+        if (testFlag(FLAG_C))
+        {
+            aVal -= 0x60;
+        }
+        if (testFlag(FLAG_H))
+        {
+            aVal -= 0x6;
+        }
     }
 
     (aVal == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
@@ -395,8 +408,14 @@ void cpl(void)
 
 void ccf(void)
 {
-    if (testFlag(FLAG_C)) { resetFlag(FLAG_C); }
-    else { setFlag(FLAG_C); }
+    if (testFlag(FLAG_C))
+    {
+        resetFlag(FLAG_C);
+    }
+    else
+    {
+        setFlag(FLAG_C);
+    }
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 }
@@ -413,7 +432,7 @@ void scf(void)
 /**
  * @brief 0x07, rotate left circular accumulator
  * @note  bit 7 is copied to the CARRY flag, CARRY goes to bit 0
- * 
+ *
  */
 void rlca(void)
 {
@@ -553,7 +572,7 @@ void reset_n_addr(uint8_t bit, uint16_t addr)
 
 /**
  * @brief perform nonrelative unconditional jump to 16-bit immediate value
- * 
+ *
  */
 void jmp_imm16()
 {
@@ -562,7 +581,7 @@ void jmp_imm16()
 
 /**
  * @brief perform nonrelative conditional jump to 16-bit immediate value
- * 
+ *
  * @param flag flag to test
  * @param testSet if true, will execute jump if specified flag is set
  * @return true     if jumped
@@ -574,11 +593,19 @@ bool jmp_imm16_cond(Flag flag, bool testSet)
 
     if (testFlag(flag))
     {
-        if (testSet) { jmp_imm16(); ret = true; }
+        if (testSet)
+        {
+            jmp_imm16();
+            ret = true;
+        }
     }
     else
     {
-        if (!testSet) { jmp_imm16(); ret = true; }
+        if (!testSet)
+        {
+            jmp_imm16();
+            ret = true;
+        }
     }
 
     return ret;
@@ -586,7 +613,7 @@ bool jmp_imm16_cond(Flag flag, bool testSet)
 
 /**
  * @brief perform nonrelative unconditional jump to address specified in HL
- * 
+ *
  */
 void jmp_hl(void)
 {
@@ -595,7 +622,7 @@ void jmp_hl(void)
 
 /**
  * @brief perform relative unconditional jump to signed 8-bit immediate
- * 
+ *
  */
 void jr_imm8()
 {
@@ -605,7 +632,7 @@ void jr_imm8()
 
 /**
  * @brief perform relative conditional jump to signed 8-bit immediate
- * 
+ *
  * @param flag      flag to test
  * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
  * @return true     if jumped
@@ -617,11 +644,19 @@ bool jr_imm8_cond(Flag flag, bool testSet)
 
     if (testFlag(flag))
     {
-        if (testSet) { jr_imm8(); ret = true; }
+        if (testSet)
+        {
+            jr_imm8();
+            ret = true;
+        }
     }
     else
     {
-        if (!testSet) { jr_imm8(); ret = true; }
+        if (!testSet)
+        {
+            jr_imm8();
+            ret = true;
+        }
     }
 
     return ret;
@@ -648,7 +683,7 @@ void call_imm16()
 
 /**
  * @brief conditionally call subroutine at unsigned 16-bit immediate
- * 
+ *
  * @param flag      flag to test
  * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
  * @return true     if jumped
@@ -660,7 +695,7 @@ bool call_imm16_cond(Flag flag, bool testSet)
 
     if (testFlag(flag))
     {
-        if (testSet) 
+        if (testSet)
         {
             call_imm16();
             ret = true;
@@ -668,7 +703,7 @@ bool call_imm16_cond(Flag flag, bool testSet)
     }
     else
     {
-        if (!testSet) 
+        if (!testSet)
         {
             call_imm16();
             ret = true;
@@ -694,7 +729,7 @@ void call_irq_subroutine(uint8_t addr)
  * @brief call RST page between 0 and 8
  *
  * @note stores next valid PC on stack. RSTs are at 0x00, 0x08, 0x10, etc
- * 
+ *
  * @param addr RST addr to call
  */
 void rst_n(uint8_t addr)
@@ -706,7 +741,7 @@ void rst_n(uint8_t addr)
 
 /**
  * @brief return from subroutine. pulls next PC address from stack
- * 
+ *
  */
 void ret(void)
 {
@@ -720,7 +755,7 @@ bool ret_cond(Flag flag, bool testSet)
 
     if (testFlag(flag))
     {
-        if (testSet) 
+        if (testSet)
         {
             ret();
             retval = true;
@@ -728,7 +763,7 @@ bool ret_cond(Flag flag, bool testSet)
     }
     else
     {
-        if (!testSet) 
+        if (!testSet)
         {
             ret();
             retval = true;
@@ -741,8 +776,8 @@ bool ret_cond(Flag flag, bool testSet)
 /**
  * @brief Rotate Left through Carry
  * @note  carry becomes 0, and bit 7 is copied to carry
- * 
- * @param val 
+ *
+ * @param val
  */
 static uint8_t _rl(uint8_t val)
 {
@@ -755,7 +790,10 @@ static uint8_t _rl(uint8_t val)
     val |= testFlag(FLAG_C);
     toggleFlag ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    if (val == 0) { setFlag(FLAG_Z); }
+    if (val == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return val;
 }
@@ -770,10 +808,16 @@ static uint8_t _rlc(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    if (val & 0x80)
+    {
+        setFlag(FLAG_C);
+    } // get bit 7 of previous value
     uint8_t ret = (val << 1) | testFlag(FLAG_C);
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    if (ret == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return ret;
 }
@@ -789,10 +833,16 @@ static uint8_t _sla(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x80) { setFlag(FLAG_C); } // get bit 7 of previous value
+    if (val & 0x80)
+    {
+        setFlag(FLAG_C);
+    } // get bit 7 of previous value
     uint8_t ret = val << 1;
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    if (ret == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return ret;
 }
@@ -800,8 +850,8 @@ static uint8_t _sla(uint8_t val)
 /**
  * @brief Rotate Right through Carry
  * @note  carry becomes 7, and bit 0 is copied to carry
- * 
- * @param val 
+ *
+ * @param val
  */
 static uint8_t _rr(uint8_t val)
 {
@@ -814,7 +864,10 @@ static uint8_t _rr(uint8_t val)
     val |= (testFlag(FLAG_C) << 7);
     toggleFlag ? setFlag(FLAG_C) : resetFlag(FLAG_C);
 
-    if (val == 0) { setFlag(FLAG_Z); }
+    if (val == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return val;
 }
@@ -829,10 +882,16 @@ static uint8_t _rrc(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 7 of previous value
+    if (val & 0x01)
+    {
+        setFlag(FLAG_C);
+    } // get bit 7 of previous value
     uint8_t ret = (val << 1) | (testFlag(FLAG_C) >> 7);
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    if (ret == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return ret;
 }
@@ -849,11 +908,17 @@ static uint8_t _sra(uint8_t val)
     resetFlag(FLAG_H);
     uint8_t bit7 = val & 0x80;
     val &= ~0x80; // unset bit 7
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
+    if (val & 0x01)
+    {
+        setFlag(FLAG_C);
+    } // get bit 0 of previous value
 
     uint8_t ret = (val >> 1) | (bit7 << 7);
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    if (ret == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return ret;
 }
@@ -863,10 +928,16 @@ static uint8_t _srl(uint8_t val)
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 
-    if (val & 0x01) { setFlag(FLAG_C); } // get bit 0 of previous value
+    if (val & 0x01)
+    {
+        setFlag(FLAG_C);
+    } // get bit 0 of previous value
     uint8_t ret = val >> 1;
 
-    if (ret == 0) { setFlag(FLAG_Z); }
+    if (ret == 0)
+    {
+        setFlag(FLAG_Z);
+    }
 
     return ret;
 }

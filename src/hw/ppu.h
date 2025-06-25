@@ -4,19 +4,20 @@
  * @brief seaboy PPU routines
  * @version 0.1
  * @date 2024-03-15
- * 
+ *
  * @copyright Copyright (c) 2024
- * 
+ *
  */
 
 #ifndef _PPU_H_
 #define _PPU_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
-typedef enum {
+typedef enum
+{
     BLACK = 0, // 00; transparent when used in objects
     LGRAY = 1, // 01
     DGRAY = 2, // 10
@@ -33,9 +34,9 @@ typedef enum
 
 typedef struct
 {
-    size_t len;
+    size_t         len;
     ETilePalette_t pixels[8];
-    size_t discardLeft;
+    size_t         discardLeft;
 } SFIFO_t;
 
 void buildTiles(uint32_t);

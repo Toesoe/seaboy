@@ -4,39 +4,39 @@
  * @brief seaboy bus (ram, vram)
  * @version 0.1
  * @date 2023-06-15
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 
 #include "mem.h"
 
-#include <stdint.h>
-#include <string.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-static bus_t addressBus;
+static bus_t    addressBus;
 static uint8_t *pRom;
-static size_t romSize;
+static size_t   romSize;
 
 #define DEBUG_WRITES
 #define TEST
 
 #ifndef TEST
-static void bankSwitch(uint8_t, uint16_t);
+static void    bankSwitch(uint8_t, uint16_t);
 static uint8_t cartRam[32768];
-static bool cartramEnabled = false;
-static bool advancedBankingMode = false;
-static int ramBankNo = 0;
+static bool    cartramEnabled      = false;
+static bool    advancedBankingMode = false;
+static int     ramBankNo           = 0;
 #endif
 
 /**
  * map rom into memmap. copies incoming ptr
-*/
+ */
 void mapRomIntoMem(uint8_t **ppRomLoaded, size_t len)
 {
-    pRom = *ppRomLoaded;
+    pRom    = *ppRomLoaded;
     romSize = len;
 
     // map loaded rom to bus
@@ -72,6 +72,7 @@ uint8_t fetch8(uint16_t addr)
     if (addr == 0xFF00) return 0xFF;
     return addressBus.bus[addr];
 }
+
 uint16_t fetch16(uint16_t addr)
 {
     return (uint16_t)(addressBus.bus[addr + 1] << 8) | addressBus.bus[addr];
@@ -79,7 +80,7 @@ uint16_t fetch16(uint16_t addr)
 
 /**
  * @brief write 8-bit value to address
- * 
+ *
  * @param val value to write
  * @param addr address to write to
  */
@@ -97,15 +98,15 @@ void write8(uint8_t val, uint16_t addr)
         {
             return;
         }
-        #ifdef DEBUG_WRITES
+#ifdef DEBUG_WRITES
         printf("VRAM WRITE %02X at %04X\n", val, addr);
-        #endif
+#endif
     }
     else if ((addr >= 0xA000) && (addr <= ERAM_SIZE)) //&& cartramEnabled)
     {
-        #ifdef DEBUG_WRITES
+#ifdef DEBUG_WRITES
         printf("CARTRAM WRITE %02X at %04X bank %d\n", val, addr, ramBankNo);
-        #endif
+#endif
         cartRam[addr + (ramBankNo * ERAM_SIZE)] = val;
     }
     else if (addr == 0xFF46) // OAM DMA
@@ -123,7 +124,7 @@ void write8(uint8_t val, uint16_t addr)
 
 /**
  * @brief write 16-bit val to addr
- * 
+ *
  * @param val value to write
  * @param addr address to write to
  */
@@ -150,12 +151,12 @@ static void bankSwitch(uint8_t val, uint16_t addr)
         // RAM enable
         if ((val & 0xF) == 0xA)
         {
-            //printf("enabling cartram\n");
+            // printf("enabling cartram\n");
             cartramEnabled = true;
         }
         else
         {
-            //printf("disabling cartram\n");
+            // printf("disabling cartram\n");
             cartramEnabled = false;
         }
     }
