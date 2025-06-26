@@ -24,6 +24,7 @@
 #include "apu.h"
 #include "mem.h"
 #include <stdint.h>
+#include <string.h>
 
 //=====================================================================================================================
 // Defines
@@ -31,6 +32,8 @@
 
 #define WAVEFORM_GENERATOR_TIMER 4194304
 #define MAX_WAVEFORM_INDEX       7
+
+#define PULSE_TIMER_PERIOD(freq) (4 * (2048 - (freq)))
 
 //=====================================================================================================================
 // Types
@@ -101,11 +104,24 @@ static bus_t *g_pBus = nullptr;
 
 static APU_t  g_APU  = { 0 };
 
+static bool hasTicked = false;
+
+#define APU_SAMPLE_RATE 44100
+#define APU_CLOCK 1048576
+
+#define SAMPLE_BUFFER_SIZE 2048
+
+static int16_t sampleBuffer[SAMPLE_BUFFER_SIZE];
+static volatile size_t sampleWriteIndex = 0;
+static volatile size_t sampleReadIndex  = 0;
+
 //=====================================================================================================================
 // Function prototypes
 //=====================================================================================================================
 
 void tickAudioChannel(SAudioChannel_t *, size_t);
+static inline uint16_t getPulseFrequency(const SPulseAudioChannel_t *);
+static void updateAPUSampleBuffer(void);
 
 //=====================================================================================================================
 // Functions
@@ -190,33 +206,65 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t mCycles)
 
         while (pulse->currentPeriod <= 0)
         {
-            pulse->currentPeriod += 4 * (2048 - (((pulse->pNRx4->freqMSB & 0x7) << 8) | *pulse->pNRx3));
+            pulse->currentPeriod += PULSE_TIMER_PERIOD(getPulseFrequency(pulse));
 
             pulse->waveformIndex = (pulse->waveformIndex + 1) & 0x07;
         }
-        pulse->sample = sc_dutyWaveforms[pulse->pNRx1->waveDuty][pulse->waveformIndex] ? 255 : 0;
+
+        pulse->sample = sc_dutyWaveforms[pulse->pNRx1->waveDuty][pulse->waveformIndex] ? 1 : 0;
     }
     // else if (channelCtx->type == WAVE)
     // {
     //     SWaveAudioChannel_t *wave = (SWaveAudioChannel_t *)channelCtx;
     //     uint16_t period = ((wave->pNRx4->freqMSB & 0x7) << 11) | *wave->pNRx3;
     // }
+
+    updateAPUSampleBuffer();
 }
 
 void generateDownmixCallback(void *userdata, uint8_t *pStream, int len)
 {
-    int16_t  mix = 0;
+    int16_t *out     = (int16_t *)pStream;
+    size_t   samples = len / sizeof(int16_t);
 
-    APU_t   *apu = (APU_t *)userdata;
-    int16_t *out = (int16_t *)pStream;
+    for (size_t i = 0; i < samples; i++)
+    {
+        if (sampleReadIndex != sampleWriteIndex)
+        {
+            out[i] = sampleBuffer[sampleReadIndex & (SAMPLE_BUFFER_SIZE - 1)];
+            sampleReadIndex++;
+        }
+        else
+        {
+            out[i] = 0; // buffer underrun → output silence
+        }
+    }
+}
 
-    if (g_APU.audioControl.pNR52->ch1Enable) mix += g_APU.ch1Pulse.sample;
-    if (g_APU.audioControl.pNR52->ch2Enable) mix += g_APU.ch2Pulse.sample;
-    if (g_APU.audioControl.pNR52->ch3Enable) mix += g_APU.ch3Wave.sample;
-    if (g_APU.audioControl.pNR52->ch4Enable) mix += g_APU.ch4Noise.sample;
+static inline uint16_t getPulseFrequency(const SPulseAudioChannel_t *pulse)
+{
+    return ((pulse->pNRx4->freqMSB & 0x7) << 8) | *pulse->pNRx3;
+}
 
-    if (mix > 32767) mix = 32767;
-    else if (mix < -32768) mix = -32768;
+static void updateAPUSampleBuffer()
+{
+    static int apuSampleCounter = 0;
+    int16_t mix = 0;
 
-    out[0] = mix;
+    apuSampleCounter += APU_SAMPLE_RATE; // e.g. 44100
+    if (apuSampleCounter >= APU_CLOCK)   // e.g. 1048576
+    {
+        apuSampleCounter -= APU_CLOCK;
+
+        if (g_APU.audioControl.pNR52->ch1Enable) mix += g_APU.ch1Pulse.sample ? 3000 : -3000;
+        //if (g_APU.audioControl.pNR52->ch2Enable) mix += g_APU.ch2Pulse.sample ? 3000 : -3000;
+        //if (g_APU.audioControl.pNR52->ch3Enable) mix += g_APU.ch3Wave.sample  ? 3000 : -3000;
+        //if (g_APU.audioControl.pNR52->ch4Enable) mix += g_APU.ch4Noise.sample ? 3000 : -3000;
+
+        if (mix > 32767) mix = 32767;
+        else if (mix < -32768) mix = -32768;
+
+        sampleBuffer[sampleWriteIndex & (SAMPLE_BUFFER_SIZE - 1)] = mix;
+        sampleWriteIndex++;
+    }
 }
