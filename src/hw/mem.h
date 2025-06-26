@@ -152,7 +152,7 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t sweepPace     : 3; // 0-2
+    uint8_t sweepPeriod   : 3; // 0-2
     uint8_t envDir        : 1; // 3
     uint8_t initialVolume : 4; // 4-7
 } SAudio_VolumeEnvelope_t;

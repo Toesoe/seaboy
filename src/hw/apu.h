@@ -29,11 +29,13 @@ typedef enum
 struct SAudioChannel_t
 {
     EAudioChannelType_t type;
+    size_t              num;
     fnTick              tick;
     uint8_t             sample;
     uint32_t            data0;
-    int32_t             data1;
+    uint32_t            data1;
     int32_t             data2;
+    int32_t             data3;
 
     void               *pNRx0;
     void               *pNRx1;
@@ -51,12 +53,14 @@ typedef struct
 
 typedef struct
 {
-    SAudioChannel_t  ch1Pulse;
-    SAudioChannel_t  ch2Pulse;
-    SAudioChannel_t  ch3Wave;
-    SAudioChannel_t  ch4Noise;
+    SAudioChannel_t           ch1Pulse;
+    SAudioChannel_t           ch2Pulse;
+    SAudioChannel_t           ch3Wave;
+    SAudioChannel_t           ch4Noise;
 
     SControlStatusRegisters_t audioControl;
+
+    size_t                    frameSequencerStep;
 } APU_t;
 
 void apuInit(bus_t *);
@@ -64,5 +68,8 @@ void apuInit(bus_t *);
 APU_t *getAPUObject(void);
 
 void generateDownmixCallback(void *, uint8_t *, int);
+
+void cycleFrameSequencer();
+void updateAPUSampleBuffer(size_t);
 
 #endif //!_APU_H_

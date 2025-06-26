@@ -23,6 +23,7 @@
 
 #include "apu.h"
 #include "mem.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -33,7 +34,7 @@
 #define WAVEFORM_GENERATOR_TIMER 4194304
 #define MAX_WAVEFORM_INDEX       7
 
-#define PULSE_TIMER_PERIOD(freq) (4 * (2048 - (freq)))
+#define PULSE_TIMER_PERIOD(freq) (((2048 - (freq))))
 
 //=====================================================================================================================
 // Types
@@ -42,9 +43,11 @@
 typedef struct
 {
     EAudioChannelType_t         type;
+    size_t                      num;
     fnTick                      tick;
-    uint8_t                     sample;
+    uint8_t                     volume;
     uint32_t                    waveformIndex;
+    int32_t                     currentEnvelopePeriod;
     int32_t                     currentPeriod;
     int32_t                     currentLengthCounter;
 
@@ -58,9 +61,11 @@ typedef struct
 typedef struct
 {
     EAudioChannelType_t               type;
+    size_t                            unused;
     fnTick                            tick;
-    uint8_t                           sample;
+    uint8_t                           volume;
     uint32_t                          wavetableAddr;
+    int32_t                           currentEnvelopePeriod;
     int32_t                           currentPeriod;
     int32_t                           currentLengthCounter;
 
@@ -74,11 +79,13 @@ typedef struct
 typedef struct
 {
     EAudioChannelType_t                        type;
+    size_t                                     unused;
     fnTick                                     tick;
-    uint8_t                                    sample;
+    uint8_t                                    volume;
     uint32_t                                   param0; // unused
-    int32_t                                    param1; // unused
+    int32_t                                    currentEnvelopePeriod;
     int32_t                                    param2; // unused
+    int32_t                                    currentLengthCounter;
 
     void                                      *pNRx0; // unused
     SAudio_NoiseChannel_LengthTimer_t         *pNRx1;
@@ -106,22 +113,26 @@ static APU_t  g_APU  = { 0 };
 
 static bool hasTicked = false;
 
-#define APU_SAMPLE_RATE 44100
+#define SDL_SAMPLE_RATE 44100
 #define APU_CLOCK 1048576
 
 #define SAMPLE_BUFFER_SIZE 2048
 
-static int16_t sampleBuffer[SAMPLE_BUFFER_SIZE];
+static uint16_t sampleBuffer[SAMPLE_BUFFER_SIZE];
 static volatile size_t sampleWriteIndex = 0;
 static volatile size_t sampleReadIndex  = 0;
+
+SPulseAudioChannel_t *pCH1 = (SPulseAudioChannel_t *)&g_APU.ch1Pulse;
+SPulseAudioChannel_t *pCH2 = (SPulseAudioChannel_t *)&g_APU.ch1Pulse;
+SWaveAudioChannel_t  *pCH3 = (SWaveAudioChannel_t *)&g_APU.ch1Pulse;
+SNoiseAudioChannel_t *pCH4 = (SNoiseAudioChannel_t *)&g_APU.ch1Pulse;
 
 //=====================================================================================================================
 // Function prototypes
 //=====================================================================================================================
 
 void tickAudioChannel(SAudioChannel_t *, size_t);
-static inline uint16_t getPulseFrequency(const SPulseAudioChannel_t *);
-static void updateAPUSampleBuffer(void);
+static inline uint16_t periodToFrequency(const SAudioChannel_t *);
 
 //=====================================================================================================================
 // Functions
@@ -133,6 +144,7 @@ void apuInit(bus_t *pBus)
 
     // channel 1
     g_APU.ch1Pulse.type  = PULSE;
+    g_APU.ch1Pulse.num   = 1;
     g_APU.ch1Pulse.pNRx0 = &pBus->map.ioregs.audio.ch1Sweep;
     g_APU.ch1Pulse.pNRx1 = &pBus->map.ioregs.audio.ch1LengthDuty;
     g_APU.ch1Pulse.pNRx2 = &pBus->map.ioregs.audio.ch1VolEnvelope;
@@ -145,6 +157,7 @@ void apuInit(bus_t *pBus)
 
     // channel 2
     g_APU.ch2Pulse.type  = PULSE;
+    g_APU.ch2Pulse.num   = 2;
     g_APU.ch2Pulse.pNRx0 = nullptr; // does not exist for channel 2
     g_APU.ch2Pulse.pNRx1 = &pBus->map.ioregs.audio.ch1LengthDuty;
     g_APU.ch2Pulse.pNRx2 = &pBus->map.ioregs.audio.ch1VolEnvelope;
@@ -190,41 +203,193 @@ APU_t *getAPUObject(void)
     return &g_APU;
 }
 
+void clockLengthCounters(void)
+{
+    if (pCH1->pNRx4->lengthEnable && pCH1->currentLengthCounter > 0)
+    {
+        pCH1->currentLengthCounter--;
+        if (pCH1->currentLengthCounter == 0) { g_APU.audioControl.pNR52->ch1Enable = false; }
+    }
+
+    if (pCH2->pNRx4->lengthEnable && pCH2->currentLengthCounter > 0)
+    {
+        pCH2->currentLengthCounter--;
+        if (pCH2->currentLengthCounter == 0) { g_APU.audioControl.pNR52->ch2Enable = false; }
+    }
+
+    if (pCH3->pNRx4->lengthEnable && pCH3->currentLengthCounter > 0)
+    {
+        pCH3->currentLengthCounter--;
+        if (pCH3->currentLengthCounter == 0) { g_APU.audioControl.pNR52->ch3Enable = false; }
+    }
+
+    if (pCH4->pNRx4->lengthEnable && pCH4->currentLengthCounter > 0)
+    {
+        pCH4->currentLengthCounter--;
+        if (pCH4->currentLengthCounter == 0) { g_APU.audioControl.pNR52->ch4Enable = false; }
+    }
+}
+
+void clockVolumeEnvelopes(void)
+{
+    if (pCH1->currentEnvelopePeriod > 0)
+    {
+        pCH1->currentEnvelopePeriod--;
+        if ((pCH1->pNRx2->sweepPeriod != 0) && (pCH1->currentEnvelopePeriod == 0))
+        {
+            pCH1->currentEnvelopePeriod = pCH1->pNRx2->sweepPeriod;
+
+            if (((pCH1->volume < 0xF) && (pCH1->pNRx2->envDir == 1)) ||
+                ((pCH1->volume > 0x0) && (pCH1->pNRx2->envDir == 0)))
+            {
+                if (pCH1->pNRx2->envDir == 1) { pCH1->volume++; }
+                else { pCH1->volume--; }
+            }
+        }
+    }
+    if (pCH2->currentEnvelopePeriod > 0)
+    {
+        pCH2->currentEnvelopePeriod--;
+        if ((pCH2->pNRx2->sweepPeriod != 0) && (pCH2->currentEnvelopePeriod == 0))
+        {
+            pCH2->currentEnvelopePeriod = pCH2->pNRx2->sweepPeriod;
+
+            if (((pCH2->volume < 0xF) && (pCH2->pNRx2->envDir == 1)) ||
+                ((pCH2->volume > 0x0) && (pCH2->pNRx2->envDir == 0)))
+            {
+                if (pCH2->pNRx2->envDir == 1) { pCH2->volume++; }
+                else { pCH2->volume--; }
+            }
+        }
+    }
+    if (pCH4->currentEnvelopePeriod > 0)
+    {
+        pCH4->currentEnvelopePeriod--;
+        if ((pCH4->pNRx2->sweepPeriod != 0) && (pCH4->currentEnvelopePeriod == 0))
+        {
+            pCH4->currentEnvelopePeriod = pCH4->pNRx2->sweepPeriod;
+
+            if (((pCH4->volume < 0xF) && (pCH4->pNRx2->envDir == 1)) ||
+                ((pCH4->volume > 0x0) && (pCH4->pNRx2->envDir == 0)))
+            {
+                if (pCH4->pNRx2->envDir == 1) { pCH4->volume++; }
+                else { pCH4->volume--; }
+            }
+        }
+    }
+}
+
+void clockFrequencySweeps(void)
+{
+
+}
+
 /**
  * @brief the frame sequencer runs at 512Hz, or every ~8192 CPU cycles (4194304/512=8192)
  *
  */
-void cycleFrameSequencer() {}
+void cycleFrameSequencer()
+{
+    switch (g_APU.frameSequencerStep)
+    {
+        case 0:
+        case 2:
+        case 4:
+        case 6:
+            clockLengthCounters();
+            break;
 
-void tickAudioChannel(SAudioChannel_t *channelCtx, size_t mCycles)
+        case 7:
+            // Volume envelope (only once per full frame)
+            clockVolumeEnvelopes();
+            break;
+    }
+
+    if (g_APU.frameSequencerStep == 2 || g_APU.frameSequencerStep == 6)
+    {
+        // Sweep happens on steps 2 and 6
+        clockFrequencySweeps();
+    }
+
+    g_APU.frameSequencerStep = (g_APU.frameSequencerStep + 1) & 0x07; // wrap 0-7
+}
+
+void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
 {
     if (channelCtx->type == PULSE)
     {
         SPulseAudioChannel_t *pulse = (SPulseAudioChannel_t *)channelCtx;
 
-        pulse->currentPeriod -= mCycles;
+        pulse->currentPeriod -= cycles;
 
         while (pulse->currentPeriod <= 0)
         {
-            pulse->currentPeriod += PULSE_TIMER_PERIOD(getPulseFrequency(pulse));
-
+            pulse->currentPeriod += PULSE_TIMER_PERIOD(periodToFrequency(channelCtx));
             pulse->waveformIndex = (pulse->waveformIndex + 1) & 0x07;
         }
 
-        pulse->sample = sc_dutyWaveforms[pulse->pNRx1->waveDuty][pulse->waveformIndex] ? 1 : 0;
-    }
-    // else if (channelCtx->type == WAVE)
-    // {
-    //     SWaveAudioChannel_t *wave = (SWaveAudioChannel_t *)channelCtx;
-    //     uint16_t period = ((wave->pNRx4->freqMSB & 0x7) << 11) | *wave->pNRx3;
-    // }
+        if (pulse->pNRx4->trigger)
+        {
+            if (pulse->num == 1)
+            {
+                if (g_APU.audioControl.pNR52->ch1Enable == 0)
+                {
+                    g_APU.audioControl.pNR52->ch1Enable = 1;
+                }
 
-    updateAPUSampleBuffer();
+                pCH1->currentEnvelopePeriod = pCH1->pNRx2->sweepPeriod;
+                pCH1->volume                = pCH1->pNRx2->initialVolume;
+            }
+            else if (pulse->num == 2)
+            {
+                if (g_APU.audioControl.pNR52->ch2Enable == 0)
+                {
+                    g_APU.audioControl.pNR52->ch2Enable = 1;
+                }
+                pCH2->currentEnvelopePeriod = pCH2->pNRx2->sweepPeriod;
+                pCH2->volume                = pCH2->pNRx2->initialVolume;
+            }
+
+            if (pulse->currentLengthCounter == 0) { pulse->currentLengthCounter = 64; }
+
+        }
+    }
+    else if (channelCtx->type == WAVE)
+    {
+        SWaveAudioChannel_t *wave = (SWaveAudioChannel_t *)channelCtx;
+     
+        wave->currentPeriod -= cycles;
+
+        // while (wave->currentPeriod <= 0)
+        // {
+        //     wave->currentPeriod += PULSE_TIMER_PERIOD(periodToFrequency(pulse));
+
+        //     wave->waveformIndex = (wave->waveformIndex + 1) & 0x07;
+        // }
+
+        // pulse->sample = sc_dutyWaveforms[pulse->pNRx1->waveDuty][pulse->waveformIndex] ? 1 : 0;
+
+        if (wave->pNRx4->trigger)
+        {
+            if (g_APU.audioControl.pNR52->ch3Enable == 0) {g_APU.audioControl.pNR52->ch3Enable = 1; }
+            if (wave->currentLengthCounter == 0) { wave->currentLengthCounter = 256; }
+        }
+    }
+    else if (channelCtx->type == NOISE)
+    {
+        SNoiseAudioChannel_t *noise = (SNoiseAudioChannel_t *)channelCtx;
+
+        if (noise->pNRx4->trigger)
+        {
+            if (g_APU.audioControl.pNR52->ch4Enable == 0) {g_APU.audioControl.pNR52->ch4Enable = 1; }
+            if (noise->currentLengthCounter == 0) { noise->currentLengthCounter = 64; }
+        }
+    }
 }
 
 void generateDownmixCallback(void *userdata, uint8_t *pStream, int len)
 {
-    int16_t *out     = (int16_t *)pStream;
+    uint16_t *out     = (uint16_t *)pStream;
     size_t   samples = len / sizeof(int16_t);
 
     for (size_t i = 0; i < samples; i++)
@@ -241,30 +406,37 @@ void generateDownmixCallback(void *userdata, uint8_t *pStream, int len)
     }
 }
 
-static inline uint16_t getPulseFrequency(const SPulseAudioChannel_t *pulse)
+static inline uint16_t periodToFrequency(const SAudioChannel_t *pChannel)
 {
-    return ((pulse->pNRx4->freqMSB & 0x7) << 8) | *pulse->pNRx3;
+    // use the lower 3 bits from NRx4 as MSB's or'ed with NRx3
+    return (uint16_t)((*(uint8_t *)(pChannel->pNRx4) & 0x7) << 8) | *(uint8_t *)pChannel->pNRx3;
 }
 
-static void updateAPUSampleBuffer()
+void updateAPUSampleBuffer(size_t cycles)
 {
-    static int apuSampleCounter = 0;
-    int16_t mix = 0;
+    static double sampleCounter = 0.0;
+    const double cyclesPerSample = (double)APU_CLOCK / (double)SDL_SAMPLE_RATE;
 
-    apuSampleCounter += APU_SAMPLE_RATE; // e.g. 44100
-    if (apuSampleCounter >= APU_CLOCK)   // e.g. 1048576
+    sampleCounter += (double)cycles;
+
+    while (sampleCounter >= cyclesPerSample)
     {
-        apuSampleCounter -= APU_CLOCK;
+        sampleCounter -= cyclesPerSample;
 
-        if (g_APU.audioControl.pNR52->ch1Enable) mix += g_APU.ch1Pulse.sample ? 3000 : -3000;
-        //if (g_APU.audioControl.pNR52->ch2Enable) mix += g_APU.ch2Pulse.sample ? 3000 : -3000;
-        //if (g_APU.audioControl.pNR52->ch3Enable) mix += g_APU.ch3Wave.sample  ? 3000 : -3000;
-        //if (g_APU.audioControl.pNR52->ch4Enable) mix += g_APU.ch4Noise.sample ? 3000 : -3000;
+        uint16_t mix = 0;
 
-        if (mix > 32767) mix = 32767;
-        else if (mix < -32768) mix = -32768;
+        if (g_APU.audioControl.pNR52->audioMasterEnable)
+        {
+            if (g_APU.audioControl.pNR52->ch1Enable) mix += sc_dutyWaveforms[(*(SAudio_LengthDutyCycle_t *)g_APU.ch1Pulse.pNRx1).waveDuty][g_APU.ch1Pulse.data0] ? (pCH1->volume * 200) : 0;
+            if (g_APU.audioControl.pNR52->ch2Enable) mix += sc_dutyWaveforms[(*(SAudio_LengthDutyCycle_t *)g_APU.ch2Pulse.pNRx1).waveDuty][g_APU.ch2Pulse.data0] ? (pCH2->volume * 200) : 0;
+            // if (g_APU.audioControl.pNR52->ch3Enable) mix += g_APU.ch3Wave.sample  ? 3000 : -3000;
+            // if (g_APU.audioControl.pNR52->ch4Enable) mix += g_APU.ch4Noise.sample ? 3000 : -3000;
+        }
 
-        sampleBuffer[sampleWriteIndex & (SAMPLE_BUFFER_SIZE - 1)] = mix;
-        sampleWriteIndex++;
+        if ((sampleWriteIndex - sampleReadIndex) < SAMPLE_BUFFER_SIZE)
+        {
+            sampleBuffer[sampleWriteIndex & (SAMPLE_BUFFER_SIZE - 1)] = mix;
+            sampleWriteIndex++;
+        }
     }
 }

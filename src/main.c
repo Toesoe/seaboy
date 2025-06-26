@@ -27,7 +27,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <time.h>
+#include <SDL2/SDL.h>
 
 const uint8_t bootrom_bin[] = {
   /* 0x00 */ 0x31, 0xfe, 0xff, 0xaf, 0x21, 0xff, 0x9f, 0x32, 0xcb, 0x7c, 0x20, 0xfb, 0x21, 0x26, 0xff, 0x0e,
@@ -50,33 +50,14 @@ const uint8_t bootrom_bin[] = {
 
 size_t   bootrom_bin_len = 0xFF;
 
+#define TARGET_FPS (59.7275)
+#define FRAME_DURATION_MS (1000.0 / TARGET_FPS)
+
 static bus_t *pBus            = nullptr;
 static const cpu_t *pCpu            = nullptr;
 static APU_t *pApu            = nullptr;
 
 static void tickAudioChannels(size_t);
-
-uint64_t getTimeNs()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-
-void throttle_to_60fps(uint64_t start_ns)
-{
-    uint64_t end_ns  = getTimeNs();
-    int64_t  elapsed = (int64_t)(end_ns - start_ns);
-
-    if (elapsed < FRAME_DURATION_NS)
-    {
-        int64_t sleep_ns = FRAME_DURATION_NS - elapsed;
-
-        // Convert to timespec for nanosleep
-        struct timespec req = { .tv_sec = sleep_ns / 1000000000L, .tv_nsec = sleep_ns % 1000000000L };
-        nanosleep(&req, NULL);
-    }
-}
 
 int main()
 {
@@ -112,54 +93,77 @@ int main()
         cpuSkipBootrom();
     }
 
+    uint64_t lastFrameTime = SDL_GetPerformanceCounter();
+    double freq = (double)SDL_GetPerformanceFrequency();
+
     while (true)
     {
-        uint64_t frame_start       = getTimeNs();
-        int      cycles_this_frame = 0;
+        int     mCycles = 0;
+        uint8_t opcode  = pBus->bus[pCpu->reg16.pc];
 
-        while (cycles_this_frame < CYCLES_PER_FRAME)
+        //printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
+
+        // this is done to delay executing interrupts by one cycle: EI sets IME after delay
+        if (pBus->bus[pCpu->reg16.pc] == 0xFB)
         {
-            int     mCycles = 0;
-            uint8_t opcode  = pBus->bus[pCpu->reg16.pc];
-
-            // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
-
-            // this is done to delay executing interrupts by one cycle: EI sets IME after delay
-            if (pBus->bus[pCpu->reg16.pc] == 0xFB)
-            {
-                previousInstructionSetIME = true;
-            }
-
-            if (!checkHalted())
-            {
-                mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
-            }
-
-            if (!previousInstructionSetIME)
-            {
-                mCycles += handleInterrupts();
-            }
-
-            previousInstructionSetIME = false;
-
-            cycles_this_frame += mCycles;
-
-            handleTimers(mCycles);
-            ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
-            tickAudioChannels(mCycles);
+            previousInstructionSetIME = true;
         }
 
-        throttle_to_60fps(frame_start);
+        if (!checkHalted())
+        {
+            mCycles += executeInstruction(pBus->bus[pCpu->reg16.pc]);
+        }
+
+        if (!previousInstructionSetIME)
+        {
+            mCycles += handleInterrupts();
+        }
+
+        previousInstructionSetIME = false;
+
+        handleTimers(mCycles);
+        bool frameComplete = ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
+        tickAudioChannels(mCycles * 4);
 
         if (pBus->map.ioregs.disableBootrom == 1)
         {
             unmapBootrom();
         }
+
+        if (frameComplete)
+        {
+            frameComplete = false;
+
+            uint64_t now = SDL_GetPerformanceCounter();
+            double elapsedMS = (now - lastFrameTime) * 1000.0 / freq;
+
+            // use 59.73fps frame sync
+            if (elapsedMS < FRAME_DURATION_MS)
+            {
+                SDL_Delay((Uint32)(FRAME_DURATION_MS - elapsedMS));
+            }
+
+            lastFrameTime = SDL_GetPerformanceCounter(); // Reset for next frame
+        }
     }
 }
 
-static void tickAudioChannels(size_t mCycles)
+static void tickAudioChannels(size_t cycles)
 {
-    pApu->ch1Pulse.tick(&pApu->ch1Pulse, mCycles);
-    pApu->ch2Pulse.tick(&pApu->ch2Pulse, mCycles);
+    static size_t totalCycles = 0;
+
+    totalCycles += cycles;
+
+    pApu->ch1Pulse.tick(&pApu->ch1Pulse, cycles);
+    pApu->ch2Pulse.tick(&pApu->ch2Pulse, cycles);
+    pApu->ch3Wave.tick(&pApu->ch3Wave, cycles);
+    pApu->ch4Noise.tick(&pApu->ch4Noise, cycles);
+
+    updateAPUSampleBuffer(cycles);
+
+    if (totalCycles >= 8192)
+    {
+        cycleFrameSequencer();
+        totalCycles -= 8192;
+    }
 }
