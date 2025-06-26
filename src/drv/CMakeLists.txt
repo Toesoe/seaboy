@@ -1,5 +1,5 @@
 target_sources(${SEABOY_EXE} PRIVATE
-    #audio.c
+    audio.c
     #input.c
     render.c
 )

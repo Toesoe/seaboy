@@ -69,7 +69,7 @@ void overrideBus(bus_t *pBus)
 
 uint8_t fetch8(uint16_t addr)
 {
-    if (addr == 0xFF00) return 0xFF;
+    if (addr == 0xFF00) return 0xFF; // NOTE: don't forget to remove!
     return addressBus.bus[addr];
 }
 

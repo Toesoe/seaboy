@@ -5,7 +5,7 @@ target_sources(${SEABOY_EXE} PRIVATE
     joypad.c
     mem.c
     ppu.c
-    #snd.c
+    apu.c
 )
 
 target_include_directories(${SEABOY_EXE} PUBLIC

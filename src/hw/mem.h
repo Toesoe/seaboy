@@ -109,22 +109,22 @@ typedef struct __attribute__((__packed__))
 typedef struct __attribute__((__packed__))
 {
     uint8_t rightVol : 3;
-    uint8_t rightVIN : 1;
+    uint8_t rightVINEnable : 1;
     uint8_t leftVol  : 3;
-    uint8_t leftVIN  : 1;
-} SAudio_MasterVolumePanning_t;
+    uint8_t leftVINEnable  : 1;
+} SAudio_MasterVolumeControl_t;
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t ch1Right;
-    uint8_t ch2Right;
-    uint8_t ch3Right;
-    uint8_t ch4Right;
-    uint8_t ch1Left;
-    uint8_t ch2Left;
-    uint8_t ch3Left;
-    uint8_t ch4Left;
-} SAudio_SoundPanning_t;
+    uint8_t ch1Right : 1;
+    uint8_t ch2Right : 1;
+    uint8_t ch3Right : 1;
+    uint8_t ch4Right : 1;
+    uint8_t ch1Left  : 1;
+    uint8_t ch2Left  : 1;
+    uint8_t ch3Left  : 1;
+    uint8_t ch4Left  : 1;
+} SAudio_ChannelPanning_t;
 
 typedef struct __attribute__((__packed__))
 {
@@ -146,7 +146,7 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t initial  : 6; // 0-5
+    uint8_t initialLength  : 6; // 0-5
     uint8_t waveDuty : 2; // 6-7
 } SAudio_LengthDutyCycle_t;
 
@@ -159,7 +159,7 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t period       : 3; // 0-2
+    uint8_t freqMSB      : 3; // 0-2
     uint8_t _unused      : 3; // 3-5
     uint8_t lengthEnable : 1; // 6
     uint8_t trigger      : 1; // 7
@@ -254,25 +254,25 @@ typedef union __attribute__((__packed__))
                 SAudio_ChannelSweep_t                     ch1Sweep;             // 0xFF10 | NR10
                 SAudio_LengthDutyCycle_t                  ch1LengthDuty;        // 0xFF11 | NR11
                 SAudio_VolumeEnvelope_t                   ch1VolEnvelope;       // 0xFF12 | NR12
-                uint8_t                                   ch1PeriodLow;         // 0xFF13 | NR13
-                SAudio_PeriodHighControl_t                ch1PeriodHighControl; // 0xFF14 | NR14
+                uint8_t                                   ch1FreqLSB;         // 0xFF13 | NR13
+                SAudio_PeriodHighControl_t                ch1FreqMSBControl; // 0xFF14 | NR14
                 uint8_t                                   _padding1;            // 0xFF15
                 SAudio_LengthDutyCycle_t                  ch2LengthDuty;        // 0xFF16 | NR21
                 SAudio_VolumeEnvelope_t                   ch2VolEnvelope;       // 0xFF17 | NR22
-                uint8_t                                   ch2PeriodLow;         // 0xFF18 | NR23
-                SAudio_PeriodHighControl_t                ch2PeriodHighControl; // 0xFF19 | NR24
+                uint8_t                                   ch2FreqLSB;         // 0xFF18 | NR23
+                SAudio_PeriodHighControl_t                ch2FreqMSBControl; // 0xFF19 | NR24
                 SAudio_WaveChannel_DACEnable_t            ch3DACEnable;         // 0xFF1A | NR30
                 uint8_t                                   ch3LengthTimer;       // 0xFF1B | NR31
                 SAudio_WaveChannel_OutputLevel_t          ch3OutputLevel;       // 0xFF1C | NR32
-                uint8_t                                   ch3PeriodLow;         // 0xFF1D | NR33
-                SAudio_PeriodHighControl_t                ch3PeriodHighControl; // 0xFF1E | NR34
+                uint8_t                                   ch3FreqLSB;           // 0xFF1D | NR33
+                SAudio_PeriodHighControl_t                ch3FreqMSBControl; // 0xFF1E | NR34
                 uint8_t                                   _padding2;            // 0xFF1F
                 SAudio_NoiseChannel_LengthTimer_t         ch4LengthTimer;       // 0xFF20 | NR41
                 SAudio_VolumeEnvelope_t                   ch4VolEnvelope;       // 0xFF21 | NR42
                 SAudio_NoiseChannel_FrequencyRandomness_t ch4FreqRandom;        // 0xFF22 | NR43
                 SAudio_NoiseChannel_Control_t             ch4Control;           // 0xFF23 | NR44
-                SAudio_MasterVolumePanning_t              masterVolVINPan;      // 0xFF24
-                SAudio_SoundPanning_t                     soundPan;             // 0xFF25
+                SAudio_MasterVolumeControl_t              masterVolVINControl;  // 0xFF24
+                SAudio_ChannelPanning_t                   channelPanning;       // 0xFF25
                 SAudio_MasterControl_t                    masterControl;        // 0xFF26
             } audio;
 

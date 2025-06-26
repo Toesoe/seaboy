@@ -16,8 +16,11 @@
 #include "hw/mem.h"
 #include "hw/cpu.h"
 #include "hw/ppu.h"
-#include "drv/render.h"
+#include "hw/apu.h"
 #include "hw/cart.h"
+
+#include "drv/render.h"
+#include "drv/audio.h"
 
 #include "cputest.h"
 
@@ -45,28 +48,33 @@ const uint8_t bootrom_bin[] = {
   /* 0xF0 */ 0xf5, 0x06, 0x19, 0x78, 0x86, 0x23, 0x05, 0x20, 0xfb, 0x86, 0x20, 0xfe, 0x3e, 0x01, 0xe0, 0x50
 };
 
-size_t bootrom_bin_len = 0xFF;
+size_t   bootrom_bin_len = 0xFF;
+
+static bus_t *pBus            = nullptr;
+static const cpu_t *pCpu            = nullptr;
+static APU_t *pApu            = nullptr;
+
+static void tickAudioChannels(size_t);
 
 uint64_t getTimeNs()
 {
-  struct timespec ts;
-  clock_gettime (CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 void throttle_to_60fps(uint64_t start_ns)
 {
-  uint64_t end_ns = getTimeNs();
-  int64_t elapsed = (int64_t)(end_ns - start_ns);
+    uint64_t end_ns  = getTimeNs();
+    int64_t  elapsed = (int64_t)(end_ns - start_ns);
 
-  if (elapsed < FRAME_DURATION_NS)
+    if (elapsed < FRAME_DURATION_NS)
     {
-      int64_t sleep_ns = FRAME_DURATION_NS - elapsed;
+        int64_t sleep_ns = FRAME_DURATION_NS - elapsed;
 
-      // Convert to timespec for nanosleep
-      struct timespec req = { .tv_sec = sleep_ns / 1000000000L,
-                              .tv_nsec = sleep_ns % 1000000000L };
-      nanosleep(&req, NULL);
+        // Convert to timespec for nanosleep
+        struct timespec req = { .tv_sec = sleep_ns / 1000000000L, .tv_nsec = sleep_ns % 1000000000L };
+        nanosleep(&req, NULL);
     }
 }
 
@@ -74,8 +82,6 @@ int main()
 {
     // runTests();
     resetBus();
-    bus_t       *pBus                      = pGetBusPtr();
-    const cpu_t *pCpu                      = getCpuObject();
 
     bool         skipBootrom               = false;
     bool         previousInstructionSetIME = false;
@@ -83,8 +89,16 @@ int main()
     // bus_t prevBus;
 
     resetCpu();
+
+    pBus = pGetBusPtr();
+    pCpu = getCpuObject();
+    pApu = getAPUObject();
+
     ppuInit(skipBootrom);
+    apuInit(pBus);
+
     initRenderWindow();
+    initAudio();
 
     loadRom("Tetris.gb");
 
@@ -132,6 +146,7 @@ int main()
 
             handleTimers(mCycles);
             ppuLoop(mCycles * 4); // 1 CPU cycle = 4 PPU cycles
+            tickAudioChannels(mCycles);
         }
 
         throttle_to_60fps(frame_start);
@@ -141,4 +156,10 @@ int main()
             unmapBootrom();
         }
     }
+}
+
+static void tickAudioChannels(size_t mCycles)
+{
+    pApu->ch1Pulse.tick(&pApu->ch1Pulse, mCycles);
+    pApu->ch2Pulse.tick(&pApu->ch2Pulse, mCycles);
 }
