@@ -123,9 +123,9 @@ static volatile size_t sampleWriteIndex = 0;
 static volatile size_t sampleReadIndex  = 0;
 
 SPulseAudioChannel_t *pCH1 = (SPulseAudioChannel_t *)&g_APU.ch1Pulse;
-SPulseAudioChannel_t *pCH2 = (SPulseAudioChannel_t *)&g_APU.ch1Pulse;
-SWaveAudioChannel_t  *pCH3 = (SWaveAudioChannel_t *)&g_APU.ch1Pulse;
-SNoiseAudioChannel_t *pCH4 = (SNoiseAudioChannel_t *)&g_APU.ch1Pulse;
+SPulseAudioChannel_t *pCH2 = (SPulseAudioChannel_t *)&g_APU.ch2Pulse;
+SWaveAudioChannel_t  *pCH3 = (SWaveAudioChannel_t *)&g_APU.ch3Wave;
+SNoiseAudioChannel_t *pCH4 = (SNoiseAudioChannel_t *)&g_APU.ch4Noise;
 
 //=====================================================================================================================
 // Function prototypes
