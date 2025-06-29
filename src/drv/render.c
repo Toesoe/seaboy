@@ -78,9 +78,9 @@ void setPixel(SPixel_t *pPixel)
 void debugFramebuffer(void)
 {
     // Update pixelbuffer from framebuffer
-    for (int y = 0; y < DISP_HEIGHT; ++y)
+    for (int y = 0; y < DISP_HEIGHT; y++)
     {
-        for (int x = 0; x < DISP_WIDTH; ++x)
+        for (int x = 0; x < DISP_WIDTH; x++)
         {
             pixelbuffer[y * DISP_WIDTH + x] = map_palette_to_rgba(framebuffer[y][x]);
         }
@@ -108,7 +108,7 @@ void initRenderWindow(void)
     }
 
     g_pRenderWindow = SDL_CreateWindow("Framebuffer Example", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                       DISP_WIDTH * 4, DISP_HEIGHT * 4, SDL_WINDOW_SHOWN);
+                                       DISP_WIDTH * 6, DISP_HEIGHT * 6, SDL_WINDOW_SHOWN);
 
     if (!g_pRenderWindow)
     {
@@ -127,7 +127,7 @@ void initRenderWindow(void)
         exit(EXIT_FAILURE);
     }
 
-    // SDL_RenderSetLogicalSize(g_pRenderer, DISP_WIDTH * 4, DISP_HEIGHT * 4);
+    SDL_RenderSetLogicalSize(g_pRenderer, DISP_WIDTH, DISP_HEIGHT);
 
     g_pFbTexture = SDL_CreateTexture(g_pRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 160, 144);
 

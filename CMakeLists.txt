@@ -13,8 +13,8 @@ add_executable(${TARGET_FILE}.elf)
 
 target_compile_features(${SEABOY_EXE} PUBLIC c_std_23)
 
-set(CMAKE_C_FLAGS_DEBUG     "-Og -ggdb3 -gdwarf-5 -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-stack-protector -fstack-usage")
-set(CMAKE_CXX_FLAGS_DEBUG   "-Og -ggdb3 -gdwarf-5 -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-stack-protector -fstack-usage")
+set(CMAKE_C_FLAGS_DEBUG     "-O0 -g -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-stack-protector -fstack-usage")
+set(CMAKE_CXX_FLAGS_DEBUG   "-O0 -g -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-stack-protector -fstack-usage")
 set(CMAKE_C_FLAGS_RELEASE   "-Os -s -flto -fno-fat-lto-objects -fno-ident -fmerge-constants -fno-asynchronous-unwind-tables -fmerge-all-constants -fno-stack-protector")
 set(CMAKE_CXX_FLAGS_RELEASE "-Os -s -flto -fno-fat-lto-objects -fno-ident -fmerge-constants -fno-asynchronous-unwind-tables -fmerge-all-constants -fno-stack-protector")
 

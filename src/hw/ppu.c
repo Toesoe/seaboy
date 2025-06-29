@@ -47,6 +47,7 @@ typedef struct
     EPPUMode_t mode;
     int        cycleCount;
     int        currentLineCycleCount;
+    bool       discardCalculatedForCurrentLine;
     uint8_t    column;
     uint8_t    row;
     SFIFO_t    pixelFifo;
@@ -85,7 +86,7 @@ static void fillPixelFifo(uint8_t lx)
     if (!isWindow)
     {
         uint8_t row = (adjustedScanline / 8);
-        uint8_t col = ((lx + g_pMemoryBus->map.ioregs.lcd.scx) / 8);
+        uint8_t col = (( (lx + g_pMemoryBus->map.ioregs.lcd.scx) % 256 ) / 8);
         tileAddr += (row * 32) + col;
         // printf("BG Mode - TileMapBase: %04X, Row: %d, Col: %d, TileAddr: %04X\n", tileMapBase, row, col, tileAddr);
     }
@@ -103,8 +104,16 @@ static void fillPixelFifo(uint8_t lx)
     // Debug: Print the fetched tile ID
     // printf("Tile ID at (lx=%d, ly=%d): %02X\n", lx, g_pMemoryBus->map.ioregs.lcd.ly, tileId);
 
-    uint16_t tileRowAddr = g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData ? 0x8000 : 0x8800;
-    tileRowAddr += tileId * 16; // Each tile occupies 16 bytes (8x8 pixels)
+    uint16_t tileRowAddr;
+    if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData)
+    {
+        tileRowAddr = 0x8000 + (tileId * 16);
+    }
+    else
+    {
+        // 0x8800 mode uses signed tile data
+        tileRowAddr = 0x9000 + ((int8_t)tileId * 16);
+    }
 
     uint8_t lsb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2);
     uint8_t msb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2 + 1);
@@ -126,6 +135,7 @@ static void fillPixelFifo(uint8_t lx)
 void ppuInit(bool skipBootrom)
 {
     g_pMemoryBus = pGetBusPtr();
+    memset(&g_currentPPUState, 0, sizeof(SPPUState_t));
 
     if (!skipBootrom)
     {
@@ -135,10 +145,6 @@ void ppuInit(bool skipBootrom)
     {
         g_currentPPUState.mode = MODE_1;
     }
-
-    g_pMemoryBus->map.ioregs.lcd.control.lcdPPUEnable = 0;
-
-    memset(&g_currentPPUState, 0, sizeof(g_currentPPUState));
 }
 
 /**
@@ -163,26 +169,38 @@ bool ppuLoop(int cyclesToRun)
                 // search for OBJs which overlap line
                 // TODO: implement
 
-                g_currentPPUState.currentLineCycleCount++;
-                if (g_currentPPUState.currentLineCycleCount == 80)
+                if (g_currentPPUState.currentLineCycleCount == 0)
+                {
+                    g_currentPPUState.column = 0; // reset column at start of line
+                    g_currentPPUState.discardCalculatedForCurrentLine = false;
+                }
+
+                if (++g_currentPPUState.currentLineCycleCount == 80)
                 {
                     g_currentPPUState.mode = MODE_3;
                 }
                 break;
             }
-            case MODE_3:
+            case MODE_3: // drawing mode
             {
                 if (g_currentPPUState.column < 160)
                 {
-                    SPixel_t pixel = {
-                        g_currentPPUState.column, g_pMemoryBus->map.ioregs.lcd.ly,
-                        g_currentPPUState.pixelFifo.pixels[PIXEL_FIFO_SIZE - g_currentPPUState.pixelFifo.len]
-                    };
-                    setPixel(&pixel);
-
-                    g_currentPPUState.pixelFifo.len--;
-
-                    g_currentPPUState.column++;
+                    if (g_currentPPUState.pixelFifo.discardLeft > 0)
+                    {
+                        g_currentPPUState.pixelFifo.discardLeft--;
+                        g_currentPPUState.pixelFifo.len--;
+                    }
+                    else
+                    {
+                        SPixel_t pixel = {
+                            g_currentPPUState.column,
+                            g_pMemoryBus->map.ioregs.lcd.ly,
+                            g_currentPPUState.pixelFifo.pixels[PIXEL_FIFO_SIZE - g_currentPPUState.pixelFifo.len]
+                        };
+                        setPixel(&pixel);
+                        g_currentPPUState.pixelFifo.len--;
+                        g_currentPPUState.column++;
+                    }
                     g_currentPPUState.currentLineCycleCount++;
                 }
                 else
@@ -193,16 +211,12 @@ bool ppuLoop(int cyclesToRun)
             }
             case MODE_0: // Hblank for remaining cycles until we hit 456
             {
-                g_currentPPUState.currentLineCycleCount++;
-
-                if (g_currentPPUState.currentLineCycleCount == 456)
+                if (++g_currentPPUState.currentLineCycleCount == 456)
                 {
                     // line is done. reset counters
-                    g_currentPPUState.column = 0;
-                    g_pMemoryBus->map.ioregs.lcd.ly++;
                     g_currentPPUState.currentLineCycleCount = 0;
 
-                    if (g_pMemoryBus->map.ioregs.lcd.ly == LCD_VIEWPORT_Y)
+                    if (++g_pMemoryBus->map.ioregs.lcd.ly == LCD_VIEWPORT_Y)
                     {
                         // go to Vblank if we processed the last line
                         g_currentPPUState.mode                   = MODE_1;
@@ -220,13 +234,12 @@ bool ppuLoop(int cyclesToRun)
             {
                 if (g_currentPPUState.cycleCount < CYCLES_PER_FRAME)
                 {
-                    if (g_currentPPUState.currentLineCycleCount == 456)
+                    if (++g_currentPPUState.currentLineCycleCount == 456)
                     {
                         // end of line, increase ly
                         g_pMemoryBus->map.ioregs.lcd.ly++;
                         g_currentPPUState.currentLineCycleCount = 0;
                     }
-                    g_currentPPUState.currentLineCycleCount++;
                 }
                 else
                 {
@@ -243,8 +256,13 @@ bool ppuLoop(int cyclesToRun)
             }
         }
 
-        if (g_currentPPUState.pixelFifo.len == 0)
+        if (g_currentPPUState.pixelFifo.len == 0 || !g_currentPPUState.discardCalculatedForCurrentLine)
         {
+            if (!g_currentPPUState.discardCalculatedForCurrentLine)
+            {
+                g_currentPPUState.pixelFifo.discardLeft = g_pMemoryBus->map.ioregs.lcd.scx % 8;
+                g_currentPPUState.discardCalculatedForCurrentLine = true;
+            }
             fillPixelFifo(g_currentPPUState.column);
         }
 
