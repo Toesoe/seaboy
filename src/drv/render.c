@@ -17,54 +17,54 @@
 
 #include "render.h"
 
-ETilePalette_t example_data[DISP_HEIGHT][DISP_WIDTH] = {
-    { BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY },
-    { WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK },
-    { LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE },
-    { DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY },
-    { BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY },
-    { WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK },
-    { LGRAY, DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE },
-    { DGRAY, BLACK, WHITE, LGRAY, DGRAY, BLACK, WHITE, LGRAY }
-};
+// EPixelColor_t example_data[DISP_HEIGHT][DISP_WIDTH] = {
+//     { PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY },
+//     { PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK },
+//     { PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE },
+//     { PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY },
+//     { PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY },
+//     { PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK },
+//     { PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE },
+//     { PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY, PIXEL_COLOR_DGRAY, PIXEL_COLOR_BLACK, PIXEL_COLOR_WHITE, PIXEL_COLOR_LGRAY }
+// };
 
-static ETilePalette_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
-static uint32_t       pixelbuffer[DISP_WIDTH * DISP_HEIGHT];
+static EPixelColor_t framebuffer[DISP_HEIGHT][DISP_WIDTH] = { 0 };
+static uint32_t      pixelbuffer[DISP_WIDTH * DISP_HEIGHT];
 
 static SDL_Window    *g_pRenderWindow = NULL;
 static SDL_Renderer  *g_pRenderer     = NULL;
 static SDL_Texture   *g_pFbTexture    = NULL;
 
-static uint32_t       map_palette_to_rgba(ETilePalette_t color)
+static uint32_t       map_palette_to_rgba(EPixelColor_t color)
 {
     switch (color)
     {
-        case BLACK:
+        case PIXEL_COLOR_BLACK_TRANSPARENT:
             return 0x0f380fFF; // Black
-        case LGRAY:
+        case PIXEL_COLOR_LGRAY:
             return 0x8bac0fFF; // Light Gray
-        case DGRAY:
+        case PIXEL_COLOR_DGRAY:
             return 0x306230FF; // Dark Gray
-        case WHITE:
+        case PIXEL_COLOR_WHITE:
             return 0x9bbc0fFF; // White
         default:
             return 0x9bbc0fFF; // Default to black
     }
 }
 
-/**
- * @brief set a pixel value at a specific screen x/y location
- *
- * @param pPixel pointer to pixel value
- */
-void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
-{
-    // Ensure bounds checking
-    if (xStart + 8 > DISP_WIDTH || y >= DISP_HEIGHT) return;
+// /**
+//  * @brief set a pixel value at a specific screen x/y location
+//  *
+//  * @param pPixel pointer to pixel value
+//  */
+// void writeFifoToFramebuffer(SFIFO_t *pFifo, uint8_t xStart, uint8_t y)
+// {
+//     // Ensure bounds checking
+//     if (xStart + 8 > DISP_WIDTH || y >= DISP_HEIGHT) return;
 
-    // Copy pixel data from FIFO to framebuffer
-    memcpy(&framebuffer[y][xStart], &pFifo->pixels[pFifo->discardLeft], 8 - pFifo->discardLeft);
-}
+//     // Copy pixel data from FIFO to framebuffer
+//     memcpy(&framebuffer[y][xStart], &pFifo->pixels[pFifo->discardLeft], 8 - pFifo->discardLeft);
+// }
 
 void setPixel(SPixel_t *pPixel)
 {

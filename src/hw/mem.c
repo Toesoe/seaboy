@@ -58,7 +58,7 @@ void resetBus(void)
     memset(&addressBus.map.eram, 0xFF, ERAM_SIZE);
     memset(&addressBus.map.echo, 0xFF, ECHO_SIZE);
     memset(&addressBus.map.vram, 0xFF, VRAM_SIZE);
-    memset(&addressBus.map.oam, 0xFF, OAM_SIZE);
+    memset(&addressBus.map.oam, 0x00, OAM_SIZE);
     memset(&addressBus.map.ioregs.joypad, 0xFF, 1);
 }
 

@@ -35,7 +35,7 @@ void initAudio()
     desired.freq     = 44100;
     desired.format   = AUDIO_U16SYS;
     desired.channels = 1;
-    desired.samples  = 512;
+    desired.samples  = 2048;
     desired.callback = generateDownmixCallback;
     desired.userdata = getAPUObject();
 

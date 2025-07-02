@@ -46,6 +46,7 @@ typedef struct
     size_t                      num;
     fnTick                      tick;
     uint8_t                     volume;
+    bool                        envelopeActive;
     uint32_t                    waveformIndex;
     int32_t                     currentEnvelopePeriod;
     int32_t                     currentPeriod;
@@ -64,6 +65,7 @@ typedef struct
     size_t                            unused;
     fnTick                            tick;
     uint8_t                           volume;
+    bool                              unused2;
     uint32_t                          wavetableAddr;
     int32_t                           currentEnvelopePeriod;
     int32_t                           currentPeriod;
@@ -82,6 +84,7 @@ typedef struct
     size_t                                     unused;
     fnTick                                     tick;
     uint8_t                                    volume;
+    bool                                       envelopeActive;
     uint32_t                                   param0; // unused
     int32_t                                    currentEnvelopePeriod;
     int32_t                                    param2; // unused
@@ -107,9 +110,10 @@ static const Waveform_t sc_dutyWaveforms[] = {
     { 0, 1, 1, 1, 1, 1, 1, 0 }
 };
 
-static bus_t *g_pBus = nullptr;
+static bus_t *g_pBus         = nullptr;
 
-static APU_t  g_APU  = { 0 };
+static APU_t  g_APU          = { 0 };
+static APU_t  g_APU_previous = { 0 };
 
 static bool hasTicked = false;
 
@@ -132,7 +136,7 @@ SNoiseAudioChannel_t *pCH4 = (SNoiseAudioChannel_t *)&g_APU.ch4Noise;
 //=====================================================================================================================
 
 void tickAudioChannel(SAudioChannel_t *, size_t);
-static inline uint16_t periodToFrequency(const SAudioChannel_t *);
+static inline uint16_t getChannelFreqValue(const SAudioChannel_t *);
 
 //=====================================================================================================================
 // Functions
@@ -143,6 +147,10 @@ void apuInit(bus_t *pBus)
     g_pBus = pBus;
 
     // channel 1
+    // data0: waveformIndex;
+    // data1: currentEnvelopePeriod
+    // data2: currentPeriod;
+    // data3: currentLengthCounter;
     g_APU.ch1Pulse.type  = PULSE;
     g_APU.ch1Pulse.num   = 1;
     g_APU.ch1Pulse.pNRx0 = &pBus->map.ioregs.audio.ch1Sweep;
@@ -152,10 +160,15 @@ void apuInit(bus_t *pBus)
     g_APU.ch1Pulse.pNRx4 = &pBus->map.ioregs.audio.ch1FreqMSBControl;
 
     g_APU.ch1Pulse.tick  = tickAudioChannel;
-    g_APU.ch1Pulse.data1 = 4 * 2048;                                                // period
-    g_APU.ch1Pulse.data2 = 64 - pBus->map.ioregs.audio.ch1LengthDuty.initialLength; // length
+    g_APU.ch1Pulse.data1 = 7;
+    g_APU.ch1Pulse.data2 = 4 * 2048;                                                // period
+    g_APU.ch1Pulse.data3 = 64 - pBus->map.ioregs.audio.ch1LengthDuty.initialLength; // length
 
     // channel 2
+    // data0: waveformIndex;
+    // data1: currentEnvelopePeriod
+    // data2: currentPeriod;
+    // data3: currentLengthCounter;
     g_APU.ch2Pulse.type  = PULSE;
     g_APU.ch2Pulse.num   = 2;
     g_APU.ch2Pulse.pNRx0 = nullptr; // does not exist for channel 2
@@ -165,10 +178,15 @@ void apuInit(bus_t *pBus)
     g_APU.ch2Pulse.pNRx4 = &pBus->map.ioregs.audio.ch2FreqMSBControl;
 
     g_APU.ch2Pulse.tick  = tickAudioChannel;
-    g_APU.ch2Pulse.data1 = 4 * 2048;                                                // period
-    g_APU.ch2Pulse.data2 = 64 - pBus->map.ioregs.audio.ch2LengthDuty.initialLength; // length
+    g_APU.ch2Pulse.data1 = 7;
+    g_APU.ch2Pulse.data2 = 4 * 2048;                                                // period
+    g_APU.ch2Pulse.data3 = 64 - pBus->map.ioregs.audio.ch2LengthDuty.initialLength; // length
 
     // channel 3
+    // data0: wavetableAddr;
+    // data1: currentEnvelopePeriod;
+    // data2: currentPeriod;
+    // data3: currentLengthCounter;
     g_APU.ch3Wave.type  = WAVE;
     g_APU.ch3Wave.pNRx0 = &pBus->map.ioregs.audio.ch3DACEnable;
     g_APU.ch3Wave.pNRx1 = &pBus->map.ioregs.audio.ch3LengthTimer;
@@ -177,25 +195,33 @@ void apuInit(bus_t *pBus)
     g_APU.ch3Wave.pNRx4 = &pBus->map.ioregs.audio.ch3FreqMSBControl;
 
     g_APU.ch3Wave.tick  = tickAudioChannel;
-    g_APU.ch3Wave.data1 = 4 * 2048;                                   // period
-    g_APU.ch3Wave.data2 = 64 - pBus->map.ioregs.audio.ch3LengthTimer; // length
+    g_APU.ch3Wave.data1 = 7;
+    g_APU.ch3Wave.data2 = 4 * 2048;                                   // period
+    g_APU.ch3Wave.data3 = 256 - pBus->map.ioregs.audio.ch3LengthTimer; // length
 
     // channel 4
+    // data0: unused
+    // data1: currentEnvelopePeriod;
+    // data2: unused
+    // data3: currentLengthCounter;
     g_APU.ch4Noise.type  = NOISE;
     g_APU.ch4Noise.pNRx0 = nullptr; // does not exist for channel 4
     g_APU.ch4Noise.pNRx1 = &pBus->map.ioregs.audio.ch4LengthTimer;
-    g_APU.ch4Noise.pNRx2 = &pBus->map.ioregs.audio.ch1VolEnvelope;
+    g_APU.ch4Noise.pNRx2 = &pBus->map.ioregs.audio.ch4VolEnvelope;
     g_APU.ch4Noise.pNRx3 = &pBus->map.ioregs.audio.ch4FreqRandom;
     g_APU.ch4Noise.pNRx4 = &pBus->map.ioregs.audio.ch4Control;
 
     g_APU.ch4Noise.tick  = tickAudioChannel;
-    g_APU.ch4Noise.data1 = UINT32_MAX;                                         // unused
-    g_APU.ch4Noise.data2 = 64 - pBus->map.ioregs.audio.ch4LengthTimer.initial; // length
+    g_APU.ch4Noise.data1 = 7;
+    g_APU.ch4Noise.data2 = UINT32_MAX;                                         // unused
+    g_APU.ch4Noise.data3 = 64 - pBus->map.ioregs.audio.ch4LengthTimer.initialLength; // length
 
     // control
     g_APU.audioControl.pNR50 = &pBus->map.ioregs.audio.masterVolVINControl;
     g_APU.audioControl.pNR51 = &pBus->map.ioregs.audio.channelPanning;
     g_APU.audioControl.pNR52 = &pBus->map.ioregs.audio.masterControl;
+
+    g_APU_previous = g_APU;
 }
 
 APU_t *getAPUObject(void)
@@ -230,51 +256,72 @@ void clockLengthCounters(void)
     }
 }
 
+// TODO: optimize, reuse code
 void clockVolumeEnvelopes(void)
 {
-    if (pCH1->currentEnvelopePeriod > 0)
+    if (pCH1->envelopeActive && pCH1->pNRx2->envelopePeriod > 0)
     {
-        pCH1->currentEnvelopePeriod--;
-        if ((pCH1->pNRx2->sweepPeriod != 0) && (pCH1->currentEnvelopePeriod == 0))
+        if (--pCH1->currentEnvelopePeriod == 0)
         {
-            pCH1->currentEnvelopePeriod = pCH1->pNRx2->sweepPeriod;
-
-            if (((pCH1->volume < 0xF) && (pCH1->pNRx2->envDir == 1)) ||
-                ((pCH1->volume > 0x0) && (pCH1->pNRx2->envDir == 0)))
+            if ((pCH1->volume < 0xF) && (pCH1->pNRx2->envDir == 1))
             {
-                if (pCH1->pNRx2->envDir == 1) { pCH1->volume++; }
-                else { pCH1->volume--; }
+                pCH1->volume++;
+                if (pCH1->volume == 0xF) { pCH1->envelopeActive = false; }
             }
+            else if ((pCH1->volume > 0x0) && (pCH1->pNRx2->envDir == 0))
+            {
+                pCH1->volume--;
+                if (pCH1->volume == 0x0) { pCH1->envelopeActive = false; }
+            }
+            else
+            {
+                pCH1->envelopeActive = false;
+            }
+            pCH1->currentEnvelopePeriod = (pCH1->pNRx2->envelopePeriod == 0) ? 8 : pCH1->pNRx2->envelopePeriod;
         }
     }
-    if (pCH2->currentEnvelopePeriod > 0)
-    {
-        pCH2->currentEnvelopePeriod--;
-        if ((pCH2->pNRx2->sweepPeriod != 0) && (pCH2->currentEnvelopePeriod == 0))
-        {
-            pCH2->currentEnvelopePeriod = pCH2->pNRx2->sweepPeriod;
 
-            if (((pCH2->volume < 0xF) && (pCH2->pNRx2->envDir == 1)) ||
-                ((pCH2->volume > 0x0) && (pCH2->pNRx2->envDir == 0)))
+    if (pCH2->envelopeActive && pCH2->pNRx2->envelopePeriod > 0)
+    {
+        if (--pCH2->currentEnvelopePeriod == 0)
+        {
+            if ((pCH2->volume < 0xF) && (pCH2->pNRx2->envDir == 1))
             {
-                if (pCH2->pNRx2->envDir == 1) { pCH2->volume++; }
-                else { pCH2->volume--; }
+                pCH2->volume++;
+                if (pCH2->volume == 0xF) { pCH2->envelopeActive = false; }
             }
+            else if ((pCH2->volume > 0x0) && (pCH2->pNRx2->envDir == 0))
+            {
+                pCH2->volume--;
+                if (pCH2->volume == 0x0) { pCH2->envelopeActive = false; }
+            }
+            else
+            {
+                pCH2->envelopeActive = false;
+            }
+            pCH2->currentEnvelopePeriod = (pCH1->pNRx2->envelopePeriod == 0) ? 8 : pCH1->pNRx2->envelopePeriod;
         }
     }
-    if (pCH4->currentEnvelopePeriod > 0)
-    {
-        pCH4->currentEnvelopePeriod--;
-        if ((pCH4->pNRx2->sweepPeriod != 0) && (pCH4->currentEnvelopePeriod == 0))
-        {
-            pCH4->currentEnvelopePeriod = pCH4->pNRx2->sweepPeriod;
 
-            if (((pCH4->volume < 0xF) && (pCH4->pNRx2->envDir == 1)) ||
-                ((pCH4->volume > 0x0) && (pCH4->pNRx2->envDir == 0)))
+    if (pCH4->envelopeActive && pCH4->pNRx2->envelopePeriod > 0)
+    {
+        if (--pCH4->currentEnvelopePeriod == 0)
+        {
+            if ((pCH4->volume < 0xF) && (pCH4->pNRx2->envDir == 1))
             {
-                if (pCH4->pNRx2->envDir == 1) { pCH4->volume++; }
-                else { pCH4->volume--; }
+                pCH4->volume++;
+                if (pCH4->volume == 0xF) { pCH4->envelopeActive = false; }
             }
+            else if ((pCH4->volume > 0x0) && (pCH4->pNRx2->envDir == 0))
+            {
+                pCH4->volume--;
+                if (pCH4->volume == 0x0) { pCH4->envelopeActive = false; }
+            }
+            else
+            {
+                pCH4->envelopeActive = false;
+            }
+            pCH4->currentEnvelopePeriod = (pCH1->pNRx2->envelopePeriod == 0) ? 8 : pCH1->pNRx2->envelopePeriod;
         }
     }
 }
@@ -322,9 +369,11 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
 
         pulse->currentPeriod -= cycles;
 
+        // capture previous state, compare
+
         while (pulse->currentPeriod <= 0)
         {
-            pulse->currentPeriod += PULSE_TIMER_PERIOD(periodToFrequency(channelCtx));
+            pulse->currentPeriod += PULSE_TIMER_PERIOD(getChannelFreqValue(channelCtx));
             pulse->waveformIndex = (pulse->waveformIndex + 1) & 0x07;
         }
 
@@ -336,22 +385,40 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
                 {
                     g_APU.audioControl.pNR52->ch1Enable = 1;
                 }
-
-                pCH1->currentEnvelopePeriod = pCH1->pNRx2->sweepPeriod;
-                pCH1->volume                = pCH1->pNRx2->initialVolume;
             }
-            else if (pulse->num == 2)
+            else
             {
                 if (g_APU.audioControl.pNR52->ch2Enable == 0)
                 {
                     g_APU.audioControl.pNR52->ch2Enable = 1;
                 }
-                pCH2->currentEnvelopePeriod = pCH2->pNRx2->sweepPeriod;
-                pCH2->volume                = pCH2->pNRx2->initialVolume;
             }
 
-            if (pulse->currentLengthCounter == 0) { pulse->currentLengthCounter = 64; }
-
+            pulse->envelopeActive = true;
+            pulse->volume = pulse->pNRx2->initialVolume;
+            pulse->currentEnvelopePeriod = (pulse->pNRx2->envelopePeriod == 0) ? 8 : pulse->pNRx2->envelopePeriod;
+            pulse->currentLengthCounter = 64 - pulse->pNRx1->initialLength;
+            
+            pulse->waveformIndex = 0;
+            pulse->currentPeriod = PULSE_TIMER_PERIOD(getChannelFreqValue(channelCtx));
+            pulse->pNRx4->trigger = 0;
+        }
+        else
+        {
+            if (pulse->num == 1)
+            {
+                if (*(uint8_t *)(*(SPulseAudioChannel_t*)&g_APU.ch1Pulse).pNRx1 != *(uint8_t *)pulse->pNRx1)
+                {
+                    pulse->currentLengthCounter = 64 - pulse->pNRx1->initialLength;
+                }
+            }
+            else
+            {
+                if (*(uint8_t *)(*(SPulseAudioChannel_t*)&g_APU.ch2Pulse).pNRx1 != *(uint8_t *)pulse->pNRx1)
+                {
+                    pulse->currentLengthCounter = 64 - pulse->pNRx1->initialLength;
+                }
+            }
         }
     }
     else if (channelCtx->type == WAVE)
@@ -362,7 +429,7 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
 
         // while (wave->currentPeriod <= 0)
         // {
-        //     wave->currentPeriod += PULSE_TIMER_PERIOD(periodToFrequency(pulse));
+        //     wave->currentPeriod += PULSE_TIMER_PERIOD(getChannelFreqValue(pulse));
 
         //     wave->waveformIndex = (wave->waveformIndex + 1) & 0x07;
         // }
@@ -372,8 +439,14 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
         if (wave->pNRx4->trigger)
         {
             if (g_APU.audioControl.pNR52->ch3Enable == 0) {g_APU.audioControl.pNR52->ch3Enable = 1; }
-            if (wave->currentLengthCounter == 0) { wave->currentLengthCounter = 256; }
+            if (wave->currentLengthCounter == 0) { wave->currentLengthCounter = 256 - *wave->pNRx1; }
         }
+
+        if (*(*(SWaveAudioChannel_t*)&g_APU.ch3Wave).pNRx1 != *wave->pNRx1)
+        {
+            wave->currentLengthCounter = 256 - *wave->pNRx1;
+        }
+
     }
     else if (channelCtx->type == NOISE)
     {
@@ -382,7 +455,12 @@ void tickAudioChannel(SAudioChannel_t *channelCtx, size_t cycles)
         if (noise->pNRx4->trigger)
         {
             if (g_APU.audioControl.pNR52->ch4Enable == 0) {g_APU.audioControl.pNR52->ch4Enable = 1; }
-            if (noise->currentLengthCounter == 0) { noise->currentLengthCounter = 64; }
+            if (noise->currentLengthCounter == 0) { noise->currentLengthCounter = 64 - noise->pNRx1->initialLength; }
+        }
+
+        if (*(uint8_t *)(*(SNoiseAudioChannel_t*)&g_APU.ch4Noise).pNRx1 != *(uint8_t *)noise->pNRx1)
+        {
+            noise->currentLengthCounter = 64 - noise->pNRx1->initialLength;
         }
     }
 }
@@ -406,16 +484,22 @@ void generateDownmixCallback(void *userdata, uint8_t *pStream, int len)
     }
 }
 
-static inline uint16_t periodToFrequency(const SAudioChannel_t *pChannel)
+static inline uint16_t getChannelFreqValue(const SAudioChannel_t *pChannel)
 {
     // use the lower 3 bits from NRx4 as MSB's or'ed with NRx3
     return (uint16_t)((*(uint8_t *)(pChannel->pNRx4) & 0x7) << 8) | *(uint8_t *)pChannel->pNRx3;
 }
 
+/**
+ * @brief update sample buffer. also saves APU state to g_APU_previous
+ * 
+ * @param cycles cycle count to update for
+ */
 void updateAPUSampleBuffer(size_t cycles)
 {
     static double sampleCounter = 0.0;
     const double cyclesPerSample = (double)APU_CLOCK / (double)SDL_SAMPLE_RATE;
+    static float prev = 0.0f;
 
     sampleCounter += (double)cycles;
 
@@ -439,4 +523,6 @@ void updateAPUSampleBuffer(size_t cycles)
             sampleWriteIndex++;
         }
     }
+
+    g_APU_previous = g_APU;
 }

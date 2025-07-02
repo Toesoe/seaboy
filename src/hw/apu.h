@@ -31,7 +31,8 @@ struct SAudioChannel_t
     EAudioChannelType_t type;
     size_t              num;
     fnTick              tick;
-    uint8_t             sample;
+    uint8_t             volume;
+    bool                envelopeActive;
     uint32_t            data0;
     uint32_t            data1;
     int32_t             data2;

@@ -16,13 +16,16 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define PPU_FIFO_SIZE       8
+
 typedef enum
 {
-    BLACK = 0, // 00; transparent when used in objects
-    LGRAY = 1, // 01
-    DGRAY = 2, // 10
-    WHITE = 3  // 11
-} ETilePalette_t;
+    PIXEL_COLOR_NONE = -1,
+    PIXEL_COLOR_BLACK_TRANSPARENT = 0, // 00; transparent when used in objects
+    PIXEL_COLOR_LGRAY = 1, // 01
+    PIXEL_COLOR_DGRAY = 2, // 10
+    PIXEL_COLOR_WHITE = 3  // 11
+} EPixelColor_t;
 
 typedef enum
 {
@@ -34,9 +37,14 @@ typedef enum
 
 typedef struct
 {
+    EPixelColor_t color;
+    bool          objToBGPrioBit;
+} SPPUPixel_t;
+
+typedef struct
+{
     size_t         len;
-    ETilePalette_t pixels[8];
-    size_t         discardLeft;
+    SPPUPixel_t    _pixels[PPU_FIFO_SIZE];
 } SFIFO_t;
 
 void buildTiles(uint32_t);

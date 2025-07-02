@@ -64,7 +64,7 @@ int main()
     // runTests();
     resetBus();
 
-    bool         skipBootrom               = false;
+    bool         skipBootrom               = true;
     bool         previousInstructionSetIME = false;
     // cpu_t prevState;
     // bus_t prevBus;
