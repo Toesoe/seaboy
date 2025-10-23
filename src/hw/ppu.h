@@ -27,14 +27,6 @@ typedef enum
     PIXEL_COLOR_WHITE = 3  // 11
 } EPixelColor_t;
 
-typedef enum
-{
-    MODE_0, // Hblank
-    MODE_1, // Vblank
-    MODE_2, // OAM
-    MODE_3  // drawing
-} EPPUMode_t;
-
 typedef struct
 {
     EPixelColor_t color;

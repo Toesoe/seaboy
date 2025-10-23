@@ -16,25 +16,40 @@
 #include "mem.h"
 #include "ppu.h"
 
-#define LCD_VIEWPORT_X      160
-#define LCD_VIEWPORT_Y      144
-#define LCD_VBLANK_LEN      10 // 10 lines
+#define LCD_VIEWPORT_X           160
+#define LCD_VIEWPORT_Y           144
+#define LCD_VBLANK_LEN_LINES     10
 
-#define TILE_DIM_X          8
-#define TILE_DIM_Y          8
+#define TILE_DIM_X               8
+#define TILE_DIM_Y               8
 
-#define BG_TILES_X          32
-#define BG_TILES_Y          32
+#define BG_TILES_X               32
+#define BG_TILES_Y               32
 
-#define WINDOW_TILES_X      32
-#define WINDOW_TILES_Y      32
+#define WINDOW_TILES_X           32
+#define WINDOW_TILES_Y           32
 
-#define CHECK_BIT(var, pos) ((var) & (1 << (pos)))
+#define CHECK_BIT(var, pos)      ((var) & (1 << (pos)))
+#define SET_BIT(var, pos)        ((var) |= (1 << (pos)))
+#define CLEAR_BIT(var, pos)      ((var) &= ~(1 << (pos)))
+#define TOGGLE_BIT(var, pos)     ((var) ^= (1 << (pos)))
 
-#define TILE_SIZE_BYTES     16
-#define OAM_MAX_SPRITES     10
+#define OAM_ENTRY_SIZE_BYTES     4
+#define TILE_SIZE_BYTES          16
+#define OAM_MAX_SPRITES_PER_LINE 10
+#define OAM_TOTAL_ENTRIES        40
+#define OAM_ENTRY_Y_OFFSET_LINES 16
+#define OAM_ENTRY_X_OFFSET_LINES 8
 
-#define CYCLES_PER_FRAME    70224 // 154 scanlines * 456 cycle
+#define CYCLES_PER_FRAME         70224 // 154 scanlines * 456 cycle
+
+typedef enum
+{
+    MODE_0, // Hblank
+    MODE_1, // Vblank
+    MODE_2, // OAM
+    MODE_3  // drawing
+} EPPUMode_t;
 
 typedef struct
 {
@@ -43,17 +58,18 @@ typedef struct
 
 typedef struct
 {
-    uint8_t yPos;
-    uint8_t xPos;
-    uint8_t tileNum;
+    uint8_t yPos; // offset by -16, so yPos 16 == pos 0
+    uint8_t xPos; // offset by -8
+    uint8_t tileIdx;
+
     struct __attribute__((__packed__)) flags
     {
-        uint8_t cgbOnlyPaletteNum : 3; // 0-2
-        uint8_t cgbOnlyTileVRAMBank : 1; // 3
-        uint8_t paletteNum : 1; // 4
-        uint8_t xFlip      : 1; // 5
-        uint8_t yFlip      : 1; // 6
-        uint8_t objToBGPrio : 1; // 7
+        uint8_t cgbOnlyPaletteNum      : 3; // 0-2
+        uint8_t cgbOnlyTileVRAMBankNum : 1; // 3
+        uint8_t gbOnlyPaletteNum       : 1; // 4
+        uint8_t xFlip                  : 1; // 5
+        uint8_t yFlip                  : 1; // 6
+        uint8_t bgOverObjPrio          : 1; // 7: if 1, BG and Window color indices 1–3 are drawn over this OBJ
     } flags;
 } SOAMSpriteAttributeObject_t;
 
@@ -64,7 +80,7 @@ typedef struct
     int                         currentLineCycleCount;
     bool                        discardCalculatedForCurrentLine;
     size_t                      spriteCountCurrentLine;
-    SOAMSpriteAttributeObject_t spritesForCurrentLine[10];
+    SOAMSpriteAttributeObject_t spritesForCurrentLine[OAM_MAX_SPRITES_PER_LINE];
     size_t                      currentOAMEntry;
     size_t                      fifoDiscardLeft;
     uint8_t                     column;
@@ -73,12 +89,11 @@ typedef struct
     SFIFO_t                     spriteFifo;
 } SPPUState_t;
 
-static SPPUState_t g_currentPPUState = {0};
-static bus_t      *g_pMemoryBus = NULL;
+static SPPUState_t g_currentPPUState = { 0 };
+static bus_t      *g_pMemoryBus      = NULL;
 
-static void fifoPush(SFIFO_t *, SPPUPixel_t);
+static void        fifoPush(SFIFO_t *, SPPUPixel_t);
 static SPPUPixel_t fifoPop(SFIFO_t *);
-
 
 /**
  * @brief builds current FIFO buffer, 8 pixels
@@ -107,29 +122,26 @@ static void fillPixelFifos(uint8_t lx)
                            0x9C00 :
                            0x9800;
     uint16_t tileAddr    = tileMapBase;
+    uint8_t tileLineInTile; // 0..7 : which row inside the tile we must fetch
 
     if (!isWindow)
     {
         uint8_t row = (adjustedScanline / 8);
-        uint8_t col = (( (lx + g_pMemoryBus->map.ioregs.lcd.scx) % 256 ) / 8);
+        uint8_t col = (((lx + g_pMemoryBus->map.ioregs.lcd.scx) % 256) / 8);
         tileAddr += (row * 32) + col;
-        // printf("BG Mode - TileMapBase: %04X, Row: %d, Col: %d, TileAddr: %04X\n", tileMapBase, row, col, tileAddr);
+        tileLineInTile = adjustedScanline % 8;
     }
     else
     {
         uint8_t row = ((g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) / 8);
         uint8_t col = (lx / 8);
         tileAddr += (row * 32) + col;
-        // printf("Window Mode - TileMapBase: %04X, Row: %d, Col: %d, TileAddr: %04X\n", tileMapBase, row, col,
-        // tileAddr);
+        tileLineInTile = (g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) % 8;
     }
 
     uint8_t tileId = fetch8(tileAddr);
 
-    // Debug: Print the fetched tile ID
-    // printf("Tile ID at (lx=%d, ly=%d): %02X\n", lx, g_pMemoryBus->map.ioregs.lcd.ly, tileId);
-
-    uint16_t tileRowAddr, spriteTileAddr;
+    uint16_t tileRowAddr;
     if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData)
     {
         tileRowAddr = 0x8000 + (tileId * 16);
@@ -140,24 +152,48 @@ static void fillPixelFifos(uint8_t lx)
         tileRowAddr = 0x8800 + ((int8_t)tileId * 16);
     }
 
+    bool spriteFound = false;
+    uint16_t spriteTileAddr = 0;
+    uint8_t spriteLineInTile = 0;
+
     for (size_t i = 0; i < g_currentPPUState.spriteCountCurrentLine; i++)
     {
         if (g_currentPPUState.spritesForCurrentLine[i].xPos == lx)
         {
+            // compute y within sprite
             uint8_t spriteY = g_pMemoryBus->map.ioregs.lcd.ly + 16 - g_currentPPUState.spritesForCurrentLine[i].yPos;
-            if (g_currentPPUState.spritesForCurrentLine[i].flags.yFlip) spriteY = (8 * (g_pMemoryBus->map.ioregs.lcd.control.objSize + 1)) - 1 - spriteY;
+            uint8_t spriteHeight = (g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8);
 
-            spriteTileAddr = 0x8000 + (g_currentPPUState.spritesForCurrentLine[i].tileNum * 16) + spriteY * 2;
-            if (g_currentPPUState.spritesForCurrentLine[i].flags.objToBGPrio) { objToBGPriority = true; }
+            if (g_currentPPUState.spritesForCurrentLine[i].flags.yFlip)
+            {
+                // flip within sprite height
+                spriteY = (spriteHeight - 1) - spriteY;
+            }
+
+            spriteLineInTile = spriteY % 8; // each tile is 8 rows tall; for 16-high sprites the second tile is handled by tileIdx +/- 1
+            // For 8x16 mode, tile index selection may need (tileIdx & ~1) + (spriteY / 8) — preserve original intent if different.
+            spriteTileAddr = 0x8000 + (g_currentPPUState.spritesForCurrentLine[i].tileIdx * 16) + (spriteY / 8) * 16;
+
+            if (g_currentPPUState.spritesForCurrentLine[i].flags.bgOverObjPrio)
+            {
+                objToBGPriority = true;
+            }
+            spriteFound = true;
             break;
         }
     }
 
-    uint8_t lsb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2);
-    uint8_t msb = fetch8(tileRowAddr + (adjustedScanline % 8) * 2 + 1);
+    uint8_t lsb       = fetch8(tileRowAddr + tileLineInTile * 2);
+    uint8_t msb       = fetch8(tileRowAddr + tileLineInTile * 2 + 1);
 
-    uint8_t lsbSprite = fetch8(spriteTileAddr + (adjustedScanline % 8) * 2);
-    uint8_t msbSprite = fetch8(spriteTileAddr + (adjustedScanline % 8) * 2 + 1);
+    uint8_t lsbSprite = 0;
+    uint8_t msbSprite = 0;
+
+    if (spriteFound)
+    {
+        lsbSprite = fetch8(spriteTileAddr + spriteLineInTile * 2);
+        msbSprite = fetch8(spriteTileAddr + spriteLineInTile * 2 + 1);
+    }
 
     // Debug: Print the fetched tile data
     // printf("Tile data at (addr=%04X): LSB=%02X, MSB=%02X\n", tileRowAddr + (adjustedScanline % 8) * 2, lsb, msb);
@@ -167,20 +203,15 @@ static void fillPixelFifos(uint8_t lx)
         uint8_t pixel = 0, pixelSprite = 0;
         pixel |= ((msb & (1 << (7 - i))) ? 2 : 0);
         pixel |= ((lsb & (1 << (7 - i))) ? 1 : 0);
-        fifoPush(&g_currentPPUState.pixelFifo, (SPPUPixel_t){pixel, false});
+        fifoPush(&g_currentPPUState.pixelFifo, (SPPUPixel_t){ pixel, false });
 
         pixelSprite |= ((msbSprite & (1 << (7 - i))) ? 2 : 0);
         pixelSprite |= ((lsbSprite & (1 << (7 - i))) ? 1 : 0);
-        fifoPush(&g_currentPPUState.spriteFifo, (SPPUPixel_t){pixelSprite, objToBGPriority});
+        fifoPush(&g_currentPPUState.spriteFifo, (SPPUPixel_t){ pixelSprite, objToBGPriority });
     }
 
-    g_currentPPUState.pixelFifo.len = PPU_FIFO_SIZE;
+    g_currentPPUState.pixelFifo.len  = PPU_FIFO_SIZE;
     g_currentPPUState.spriteFifo.len = PPU_FIFO_SIZE;
-}
-
-void fillSpriteFifo()
-{
-    uint8_t adjustedScanline = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) % 256;
 }
 
 void ppuInit(bool skipBootrom)
@@ -222,11 +253,11 @@ bool ppuLoop(int cyclesToRun)
 
                 if (g_currentPPUState.currentLineCycleCount == 0)
                 {
-                    g_currentPPUState.column = 0; // reset column at start of line
+                    g_currentPPUState.column                          = 0; // reset column at start of line
                     g_currentPPUState.discardCalculatedForCurrentLine = false;
-                    memset(g_currentPPUState.spritesForCurrentLine, 0, 10 * sizeof(SOAMSpriteAttributeObject_t));
+                    memset(g_currentPPUState.spritesForCurrentLine, 0, OAM_MAX_SPRITES_PER_LINE * OAM_ENTRY_SIZE_BYTES);
                     g_currentPPUState.spriteCountCurrentLine = 0;
-                    g_currentPPUState.currentOAMEntry = 0;
+                    g_currentPPUState.currentOAMEntry        = 0;
                 }
 
                 // start OAM scan
@@ -237,21 +268,33 @@ bool ppuLoop(int cyclesToRun)
                 // depends on:
                 // Sprite X-Position must be greater than 0
                 // LY + 16 must be greater than or equal to Sprite Y-Position
-                // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in Tall-Sprite-Mode)
-                
+                // LY + 16 must be less than Sprite Y-Position + Sprite Height (8 in Normal Mode, 16 in
+                // Tall-Sprite-Mode)
+
                 // OAM object size is 4 bytes.
-                SOAMSpriteAttributeObject_t cur = *(SOAMSpriteAttributeObject_t *)&g_pMemoryBus->map.oam[g_currentPPUState.currentOAMEntry * 4];
 
-                if (g_currentPPUState.spriteCountCurrentLine < 10)
+                // only do 1 OAM scan every 2 cycles to keep accuracy
+                if ((g_currentPPUState.currentLineCycleCount % 2) == 0)
                 {
-                    if ((cur.xPos > 0) && (g_pMemoryBus->map.ioregs.lcd.ly + 16 >= cur.yPos) &&
-                        ((g_pMemoryBus->map.ioregs.lcd.ly + 16) <= (cur.yPos + (8 * (g_pMemoryBus->map.ioregs.lcd.control.objSize + 1)))))
-                    {
-                        g_currentPPUState.spritesForCurrentLine[g_currentPPUState.spriteCountCurrentLine++] = cur;
-                    }
-                }
+                    SOAMSpriteAttributeObject_t currentOAMObject =
+                    *(SOAMSpriteAttributeObject_t *)&g_pMemoryBus->map.oam[g_currentPPUState.currentOAMEntry * OAM_ENTRY_SIZE_BYTES];
 
-                g_currentPPUState.currentOAMEntry++;
+                    if (g_currentPPUState.spriteCountCurrentLine < OAM_MAX_SPRITES_PER_LINE)
+                    {
+                        uint8_t spriteHeight = g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8;
+
+                        if (currentOAMObject.xPos > 0 && currentOAMObject.xPos < 168)
+                        {
+                            if ((g_pMemoryBus->map.ioregs.lcd.ly + 16) >= currentOAMObject.yPos &&
+                                (g_pMemoryBus->map.ioregs.lcd.ly + 16) < (currentOAMObject.yPos + spriteHeight))
+                            {
+                                g_currentPPUState.spritesForCurrentLine[g_currentPPUState.spriteCountCurrentLine++] =
+                                currentOAMObject;
+                            }
+                        }
+                    }
+                    g_currentPPUState.currentOAMEntry++;
+                }
 
                 if (++g_currentPPUState.currentLineCycleCount == 80)
                 {
@@ -263,6 +306,16 @@ bool ppuLoop(int cyclesToRun)
             {
                 if (g_currentPPUState.column < 160)
                 {
+                    if (g_currentPPUState.pixelFifo.len == 0)
+                    {
+                        if (!g_currentPPUState.discardCalculatedForCurrentLine)
+                        {
+                            g_currentPPUState.fifoDiscardLeft                 = g_pMemoryBus->map.ioregs.lcd.scx % 8;
+                            g_currentPPUState.discardCalculatedForCurrentLine = true;
+                        }
+                        fillPixelFifos(g_currentPPUState.column);
+                    }
+
                     if (g_currentPPUState.fifoDiscardLeft > 0)
                     {
                         // discard current pixels
@@ -282,11 +335,8 @@ bool ppuLoop(int cyclesToRun)
                             outputPixel = spritePixel;
                         }
 
-                        SPixel_t pixel = {
-                            g_currentPPUState.column,
-                            g_pMemoryBus->map.ioregs.lcd.ly,
-                            outputPixel.color
-                        };
+                        SPixel_t pixel = { g_currentPPUState.column, g_pMemoryBus->map.ioregs.lcd.ly,
+                                           outputPixel.color };
                         setPixel(&pixel);
                         g_currentPPUState.column++;
                     }
@@ -345,16 +395,6 @@ bool ppuLoop(int cyclesToRun)
             }
         }
 
-        if (g_currentPPUState.pixelFifo.len == 0 || !g_currentPPUState.discardCalculatedForCurrentLine)
-        {
-            if (!g_currentPPUState.discardCalculatedForCurrentLine)
-            {
-                g_currentPPUState.fifoDiscardLeft = g_pMemoryBus->map.ioregs.lcd.scx % 8;
-                g_currentPPUState.discardCalculatedForCurrentLine = true;
-            }
-            fillPixelFifos(g_currentPPUState.column);
-        }
-
         cyclesToRun--;
         g_currentPPUState.cycleCount++;
     }
@@ -373,7 +413,7 @@ static inline void fifoPush(SFIFO_t *pFifo, SPPUPixel_t pixel)
 
 static inline SPPUPixel_t fifoPop(SFIFO_t *pFifo)
 {
-    SPPUPixel_t ret = {0};
+    SPPUPixel_t ret = { 0 };
 
     if (pFifo->len > 0)
     {
