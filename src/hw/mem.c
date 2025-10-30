@@ -28,6 +28,8 @@ static bool    cartramEnabled      = false;
 static bool    advancedBankingMode = false;
 static int     ramBankNo           = 0;
 
+static bool    dmaTransferInProgress = false;
+
 /**
  * map rom into memmap. copies incoming ptr
  */
@@ -108,7 +110,7 @@ void write8(uint8_t val, uint16_t addr)
     }
     else if (addr == 0xFF46) // OAM DMA
     {
-        memcpy(&addressBus.bus[0xFE00], &addressBus.bus[(uint16_t)val * 256], 0x9F);
+        memcpy(&addressBus.bus[0xFE00], &addressBus.bus[(uint16_t)(val << 8)], 0x9F);
         // costs 160 mcycles
     }
 #endif

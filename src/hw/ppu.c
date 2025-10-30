@@ -181,9 +181,10 @@ static void fillPixelFifos(uint8_t lx)
     for (size_t i = 0; i < g_currentPPUState.spriteCountCurrentLine; i++)
     {
         // check if OAM scan determined there is a sprite for this X coord
-        if (g_currentPPUState.spritesForCurrentLine[i].xPos == lx)
+        // X position is offet by 8
+        if (g_currentPPUState.spritesForCurrentLine[i].xPos - 8 == lx)
         {
-            // compute y within sprite. these are offset by 16 to facilitate easier scrolling, so compare to LCD Y coord + 16
+            // compute y within sprite. these are offset by 16
             uint8_t spriteY = g_pMemoryBus->map.ioregs.lcd.ly + 16 - g_currentPPUState.spritesForCurrentLine[i].yPos;
 
             uint8_t spriteHeight = (g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8);
