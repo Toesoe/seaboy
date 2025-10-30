@@ -51,10 +51,17 @@ typedef enum
     MODE_3  // drawing
 } EPPUMode_t;
 
-typedef struct
+// expanded tile type
+typedef union
 {
-    SPixel_t pixels[TILE_DIM_X][TILE_DIM_Y];
-} STile_t;
+    SPixel_t data[TILE_DIM_X * TILE_DIM_Y];
+
+    struct
+    {
+        SPixel_t x[TILE_DIM_X];
+        SPixel_t y[TILE_DIM_Y];
+    } pixels;
+} UTile_t;
 
 typedef struct
 {
@@ -96,15 +103,22 @@ static void        fifoPush(SFIFO_t *, SPPUPixel_t);
 static SPPUPixel_t fifoPop(SFIFO_t *);
 
 /**
- * @brief builds current FIFO buffer, 8 pixels
+ * @brief fills both pixel and sprite FIFOs
  *
  * @param lx current X position
  */
 static void fillPixelFifos(uint8_t lx)
 {
     bool    isWindow         = false;
-    uint8_t adjustedScanline = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) % 256;
     bool    objToBGPriority  = false;
+
+    bool    spriteFound = false;
+
+    uint16_t tileStartAddr = 0;
+    uint8_t  tileAddrOffsetForCurrentLine = 0; // we need 8 full FIFOs for a whole tile: see below
+
+    uint16_t spriteStartAddr = 0;
+    uint8_t spriteAddrOffsetForCurrentLine = 0;
 
     if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowEnable)
     {
@@ -117,51 +131,61 @@ static void fillPixelFifos(uint8_t lx)
         }
     }
 
-    uint16_t tileMapBase = ((g_pMemoryBus->map.ioregs.lcd.control.bgTilemap && !isWindow) ||
+    // first calculate the tilemap base address: either $9C00 or $9800
+    uint16_t tilemapAddr = ((g_pMemoryBus->map.ioregs.lcd.control.bgTilemap && !isWindow) ||
                             (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileMap && isWindow)) ?
                            0x9C00 :
                            0x9800;
-    uint16_t tileAddr    = tileMapBase;
-    uint8_t tileLineInTile; // 0..7 : which row inside the tile we must fetch
 
     if (!isWindow)
     {
-        uint8_t row = (adjustedScanline / 8);
-        uint8_t col = (((lx + g_pMemoryBus->map.ioregs.lcd.scx) % 256) / 8);
-        tileAddr += (row * 32) + col;
-        tileLineInTile = adjustedScanline % 8;
+        // determine the fetcher's Y coord based on the current scanline
+        uint8_t tileY = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) & 255;
+
+        // and the X coord based on the LCD's current X + X scroll
+        uint8_t tileX = ((lx + g_pMemoryBus->map.ioregs.lcd.scx) / 8) & 0x1F;
+
+        // we need to add 32 bytes per row: a row contains 2 tiles of 16 bytes each
+        tilemapAddr += ((tileY / 8) * 32) + tileX;
+        tileAddrOffsetForCurrentLine = tileY % 8;
     }
     else
     {
-        uint8_t row = ((g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) / 8);
-        uint8_t col = (lx / 8);
-        tileAddr += (row * 32) + col;
-        tileLineInTile = (g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) % 8;
+        // for a window tile, the Y coord for the window tile is instead based on LCD Y - the window Y pos
+        uint8_t tileY = ((g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) / 8);
+
+        // and the X coord is determined using only LCD X
+        uint8_t tileX = (lx / 8);
+
+        tilemapAddr += (tileY * 32) + tileX;
+        tileAddrOffsetForCurrentLine = (g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) % 8;
     }
 
-    uint8_t tileId = fetch8(tileAddr);
+    // pull up the current tile ID from the tilemap so we can have the right offset for fetching the actual tile
+    uint8_t tileId = fetch8(tilemapAddr);
 
-    uint16_t tileRowAddr;
     if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData)
     {
-        tileRowAddr = 0x8000 + (tileId * 16);
+        // LCDC4 = 1, so tile 0 starts at 0x8000
+        tileStartAddr = 0x8000 + (tileId * TILE_SIZE_BYTES);
     }
     else
     {
         // 0x8800 mode uses signed tile data
-        tileRowAddr = 0x8800 + ((int8_t)tileId * 16);
+        tileStartAddr = 0x8800 + ((int8_t)tileId * TILE_SIZE_BYTES);
     }
 
-    bool spriteFound = false;
-    uint16_t spriteTileAddr = 0;
-    uint8_t spriteLineInTile = 0;
-
+    //
+    // Sprite fetcher
+    //
     for (size_t i = 0; i < g_currentPPUState.spriteCountCurrentLine; i++)
     {
+        // check if OAM scan determined there is a sprite for this X coord
         if (g_currentPPUState.spritesForCurrentLine[i].xPos == lx)
         {
-            // compute y within sprite
+            // compute y within sprite. these are offset by 16 to facilitate easier scrolling, so compare to LCD Y coord + 16
             uint8_t spriteY = g_pMemoryBus->map.ioregs.lcd.ly + 16 - g_currentPPUState.spritesForCurrentLine[i].yPos;
+
             uint8_t spriteHeight = (g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8);
 
             if (g_currentPPUState.spritesForCurrentLine[i].flags.yFlip)
@@ -170,9 +194,11 @@ static void fillPixelFifos(uint8_t lx)
                 spriteY = (spriteHeight - 1) - spriteY;
             }
 
-            spriteLineInTile = spriteY % 8; // each tile is 8 rows tall; for 16-high sprites the second tile is handled by tileIdx +/- 1
-            // For 8x16 mode, tile index selection may need (tileIdx & ~1) + (spriteY / 8) — preserve original intent if different.
-            spriteTileAddr = 0x8000 + (g_currentPPUState.spritesForCurrentLine[i].tileIdx * 16) + (spriteY / 8) * 16;
+            // each tile is 8 rows tall; for 16-high sprites the second tile is handled by tileIdx +/- 1
+            spriteAddrOffsetForCurrentLine = spriteY % 8;
+
+            // determine sprite base address
+            spriteStartAddr = 0x8000 + (g_currentPPUState.spritesForCurrentLine[i].tileIdx * 16) + (spriteY / 8) * 16;
 
             if (g_currentPPUState.spritesForCurrentLine[i].flags.bgOverObjPrio)
             {
@@ -183,20 +209,24 @@ static void fillPixelFifos(uint8_t lx)
         }
     }
 
-    uint8_t lsb       = fetch8(tileRowAddr + tileLineInTile * 2);
-    uint8_t msb       = fetch8(tileRowAddr + tileLineInTile * 2 + 1);
+    // tiles are 8x8 pixels (64) of 2 bits each. they are stored in 16 bytes, with the first byte 
+    // containing the LSBs and the second the MSBs for a full row (Y), so a row of 8 pixels takes up 2 bytes.
+    // to fetch a whole tile we need 8 full pixel FIFOs, but this tile always starts at the same address.
+
+    // in practice this means:
+    // tileStartAddr will be the same for each row but tileAddrOffsetForCurrentLine increases by 2 per line.
+    uint8_t lsb       = fetch8(tileStartAddr + tileAddrOffsetForCurrentLine * 2);
+    uint8_t msb       = fetch8(tileStartAddr + tileAddrOffsetForCurrentLine * 2 + 1);
 
     uint8_t lsbSprite = 0;
     uint8_t msbSprite = 0;
 
     if (spriteFound)
     {
-        lsbSprite = fetch8(spriteTileAddr + spriteLineInTile * 2);
-        msbSprite = fetch8(spriteTileAddr + spriteLineInTile * 2 + 1);
+        // same logic applies to sprites as to regular tiles
+        lsbSprite = fetch8(spriteStartAddr + spriteAddrOffsetForCurrentLine * 2);
+        msbSprite = fetch8(spriteStartAddr + spriteAddrOffsetForCurrentLine * 2 + 1);
     }
-
-    // Debug: Print the fetched tile data
-    // printf("Tile data at (addr=%04X): LSB=%02X, MSB=%02X\n", tileRowAddr + (adjustedScanline % 8) * 2, lsb, msb);
 
     for (size_t i = 0; i < PPU_FIFO_SIZE; i++)
     {
@@ -283,7 +313,7 @@ bool ppuLoop(int cyclesToRun)
                     {
                         uint8_t spriteHeight = g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8;
 
-                        if (currentOAMObject.xPos > 0 && currentOAMObject.xPos < 168)
+                        if ((currentOAMObject.xPos > 0) && (currentOAMObject.xPos < 168))
                         {
                             if ((g_pMemoryBus->map.ioregs.lcd.ly + 16) >= currentOAMObject.yPos &&
                                 (g_pMemoryBus->map.ioregs.lcd.ly + 16) < (currentOAMObject.yPos + spriteHeight))

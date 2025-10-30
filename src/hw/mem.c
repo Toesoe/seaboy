@@ -16,20 +16,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DEBUG_WRITES
+
 static bus_t    addressBus;
 static uint8_t *pRom;
 static size_t   romSize;
 
-#define DEBUG_WRITES
-#define TEST
-
-#ifndef TEST
 static void    bankSwitch(uint8_t, uint16_t);
 static uint8_t cartRam[32768];
 static bool    cartramEnabled      = false;
 static bool    advancedBankingMode = false;
 static int     ramBankNo           = 0;
-#endif
 
 /**
  * map rom into memmap. copies incoming ptr
