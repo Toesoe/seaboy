@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cart.h"
+
 #define GB_BUS_SIZE    0x10000
 
 #define ROMN_SIZE      0x4000
@@ -29,6 +31,16 @@
 // VRAM related
 #define TILEBLOCK_SIZE 0x800
 #define TILEMAP_SIZE   0x400
+
+typedef enum
+{
+    NONE = -1,
+    OAM_DMA_CALLBACK,
+    JOYPAD_REG_CALLBACK,
+    ADDRESS_CALLBACK_TYPE_COUNT
+} EAddressCallbackType_t;
+
+typedef void (*addressWriteCallback)(uint8_t);
 
 typedef struct __attribute__((__packed__))
 {
@@ -204,8 +216,9 @@ typedef union __attribute__((__packed__))
 
     struct __attribute__((__packed__))
     {
-        uint8_t rom0[ROMN_SIZE]; // 0x0000 -> 0x3FFF
-        uint8_t romn[ROMN_SIZE]; // 0x4000 -> 0x7FFF
+        const uint8_t *pRom0; // 0x0000 -> 0x3FFF
+        const uint8_t *pRom1; // 0x4000 -> 0x7FFF
+        uint8_t __rompadding__[(ROMN_SIZE * 2) - (2 * sizeof(uint8_t *))];
 
         union __attribute__((__packed__))
         {
@@ -221,7 +234,8 @@ typedef union __attribute__((__packed__))
             } tiles;
         } vram;
 
-        uint8_t eram[ERAM_SIZE]; // 0xA000 -> 0xBFFF: not handled directly here
+        uint8_t *pEram; // 0xA000 -> 0xBFFF
+        uint8_t __erampadding__[(ERAM_SIZE) - sizeof(uint8_t *)];
 
         union __attribute__((__packed__))
         {
@@ -306,13 +320,14 @@ typedef union __attribute__((__packed__))
     } map;
 } bus_t;
 
-void     resetBus();
+void     initializeBus(const SCartridge_t *, bool);
 void     overrideBus(bus_t *);
 void     mapRomIntoMem(uint8_t **, size_t);
-void     unmapBootrom(void);
 
-uint8_t  fetch8(uint16_t);
-uint16_t fetch16(uint16_t);
+void     bindCallbackToAddress(uint16_t, EAddressCallbackType_t, addressWriteCallback);
+
+const uint8_t  fetch8(uint16_t);
+const uint16_t fetch16(uint16_t);
 
 void     write8(uint8_t, uint16_t);
 void     write16(uint16_t, uint16_t);

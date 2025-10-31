@@ -31,7 +31,7 @@ static uint8_t _rrc(uint8_t val);
 static uint8_t _sra(uint8_t val);
 static uint8_t _srl(uint8_t val);
 
-void           instrSetCpuPtr(cpu_t *pCpuSet)
+void instrSetCpuPtr(cpu_t *pCpuSet)
 {
     pCpu = pCpuSet;
 }

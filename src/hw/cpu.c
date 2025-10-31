@@ -28,17 +28,26 @@ static bool   isHalted      = false;
 static bool   haltOnUnknown = false;
 
 static int    getRegisterIndexByOpcodeNibble(uint8_t);
+static void   cpuSkipBootrom(void);
 
 /**
  * @brief reset cpu to initial state
  */
-void resetCpu(void)
+void resetCpu(bool skipBootrom)
 {
     memset(&cpu, 0x00, sizeof(cpu));
-    cpu.reg16.pc = 0x0;
     imeFlag      = false;
     instrSetCpuPtr(&cpu);
     pBus = pGetBusPtr();
+
+    if (!skipBootrom)
+    {
+        cpu.reg16.pc = 0x0;
+    }
+    else
+    {
+        cpuSkipBootrom();
+    }
 }
 
 /**
@@ -47,33 +56,6 @@ void resetCpu(void)
 void overrideCpu(cpu_t *pCpu)
 {
     memcpy(&cpu, pCpu, sizeof(cpu_t));
-}
-
-/**
- * @brief set CPU registers to post-bootrom values
- *
- */
-void cpuSkipBootrom(void)
-{
-    cpu.reg8.a   = 0x01;
-    cpu.reg8.f   = 0xB0;
-    cpu.reg8.b   = 0x00;
-    cpu.reg8.c   = 0x13;
-    cpu.reg8.d   = 0x00;
-    cpu.reg8.e   = 0xD8;
-    cpu.reg8.h   = 0x01;
-    cpu.reg8.l   = 0x4D;
-    cpu.reg16.sp = 0xFFFE;
-    cpu.reg16.pc = 0x100;
-    memset(&pBus->map.ioregs.lcd.control, 0x91, 1);
-    memset(&pBus->map.ioregs.lcd.stat, 0x85, 1);
-    memset(&pBus->map.ioregs.lcd.dma, 0xFF, 1);
-    memset(&pBus->map.ioregs.lcd.bgp, 0xFC, 1);
-    memset(&pBus->map.ioregs.joypad, 0xCF, 1);
-    memset(&pBus->map.ioregs.divRegister, 0x18, 1);
-    memset(&pBus->map.ioregs.timers.TAC, 0xF8, 1);
-    memset(&pBus->map.ioregs.intFlags, 0xE1, 1);
-    // todo: audio
 }
 
 /**
@@ -1904,4 +1886,31 @@ static int getRegisterIndexByOpcodeNibble(uint8_t lo)
         default:
             return -1; // Invalid register
     }
+}
+
+/**
+ * @brief set CPU registers to post-bootrom values
+ *
+ */
+static void cpuSkipBootrom(void)
+{
+    cpu.reg8.a   = 0x01;
+    cpu.reg8.f   = 0xB0;
+    cpu.reg8.b   = 0x00;
+    cpu.reg8.c   = 0x13;
+    cpu.reg8.d   = 0x00;
+    cpu.reg8.e   = 0xD8;
+    cpu.reg8.h   = 0x01;
+    cpu.reg8.l   = 0x4D;
+    cpu.reg16.sp = 0xFFFE;
+    cpu.reg16.pc = 0x100;
+    memset(&pBus->map.ioregs.lcd.control, 0x91, 1);
+    memset(&pBus->map.ioregs.lcd.stat, 0x85, 1);
+    memset(&pBus->map.ioregs.lcd.dma, 0xFF, 1);
+    memset(&pBus->map.ioregs.lcd.bgp, 0xFC, 1);
+    memset(&pBus->map.ioregs.joypad, 0xCF, 1);
+    memset(&pBus->map.ioregs.divRegister, 0x18, 1);
+    memset(&pBus->map.ioregs.timers.TAC, 0xF8, 1);
+    memset(&pBus->map.ioregs.intFlags, 0xE1, 1);
+    // todo: audio
 }

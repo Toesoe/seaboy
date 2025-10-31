@@ -88,14 +88,9 @@ typedef union __attribute__((__packed__))
 /**
  * @brief reset cpu to initial state
  */
-void resetCpu(void);
+void resetCpu(bool);
 
 void overrideCpu(cpu_t *);
-
-/**
- * @brief set CPU registers to post-bootrom values
- */
-void cpuSkipBootrom(void);
 
 /**
  * @brief set a specific flag

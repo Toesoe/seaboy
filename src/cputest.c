@@ -15,7 +15,7 @@ static void set_state(cJSON *, cpu_t *, bus_t *);
 
 void runTests(void)
 {
-    resetBus();
+    initializeBus(nullptr, false);
 
     DIR *pTestDir = opendir("./src/instructions");
 
@@ -66,7 +66,7 @@ void runTests(void)
                 if (cJSON_IsObject(json_item))
                 {
                     overrideBus(&bus);
-                    resetCpu();
+                    resetCpu(false);
                     overrideCpu(&cpu);
 
                     int posCounter = 0;
