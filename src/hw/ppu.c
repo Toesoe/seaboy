@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../drv/render.h"
+#include "drv/render.h"
 #include "mem.h"
 #include "ppu.h"
 
@@ -96,11 +96,11 @@ typedef struct
     SFIFO_t                     spriteFifo;
 } SPPUState_t;
 
-static SPPUState_t g_currentPPUState = { 0 };
-static bus_t      *g_pMemoryBus      = NULL;
+static SPPUState_t    g_currentPPUState = { 0 };
+static SAddressBus_t *g_pAddressBus     = NULL;
 
-static void        fifoPush(SFIFO_t *, SPPUPixel_t);
-static SPPUPixel_t fifoPop(SFIFO_t *);
+static void           fifoPush(SFIFO_t *, SPPUPixel_t);
+static SPPUPixel_t    fifoPop(SFIFO_t *);
 
 /**
  * @brief fills both pixel and sprite FIFOs
@@ -109,41 +109,41 @@ static SPPUPixel_t fifoPop(SFIFO_t *);
  */
 static void fillPixelFifos(uint8_t lx)
 {
-    bool    isWindow         = false;
-    bool    objToBGPriority  = false;
+    bool     isWindow                       = false;
+    bool     objToBGPriority                = false;
 
-    bool    spriteFound = false;
+    bool     spriteFound                    = false;
 
-    uint16_t tileStartAddr = 0;
-    uint8_t  tileAddrOffsetForCurrentLine = 0; // we need 8 full FIFOs for a whole tile: see below
+    uint16_t tileStartAddr                  = 0;
+    uint8_t  tileAddrOffsetForCurrentLine   = 0; // we need 8 full FIFOs for a whole tile: see below
 
-    uint16_t spriteStartAddr = 0;
-    uint8_t spriteAddrOffsetForCurrentLine = 0;
+    uint16_t spriteStartAddr                = 0;
+    uint8_t  spriteAddrOffsetForCurrentLine = 0;
 
-    if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowEnable)
+    if (g_pAddressBus->map.ioregs.lcd.control.bgWindowEnable)
     {
         uint8_t windowEnd =
-        g_pMemoryBus->map.ioregs.lcd.wy + ((g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileMap ? 4 : 3) << 3);
-        if ((g_pMemoryBus->map.ioregs.lcd.ly >= g_pMemoryBus->map.ioregs.lcd.wy) &&
-            g_pMemoryBus->map.ioregs.lcd.ly < windowEnd)
+        g_pAddressBus->map.ioregs.lcd.wy + ((g_pAddressBus->map.ioregs.lcd.control.bgWindowTileMap ? 4 : 3) << 3);
+        if ((g_pAddressBus->map.ioregs.lcd.ly >= g_pAddressBus->map.ioregs.lcd.wy) &&
+            g_pAddressBus->map.ioregs.lcd.ly < windowEnd)
         {
             isWindow = true;
         }
     }
 
     // first calculate the tilemap base address: either $9C00 or $9800
-    uint16_t tilemapAddr = ((g_pMemoryBus->map.ioregs.lcd.control.bgTilemap && !isWindow) ||
-                            (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileMap && isWindow)) ?
+    uint16_t tilemapAddr = ((g_pAddressBus->map.ioregs.lcd.control.bgTilemap && !isWindow) ||
+                            (g_pAddressBus->map.ioregs.lcd.control.bgWindowTileMap && isWindow)) ?
                            0x9C00 :
                            0x9800;
 
     if (!isWindow)
     {
         // determine the fetcher's Y coord based on the current scanline
-        uint8_t tileY = (g_pMemoryBus->map.ioregs.lcd.ly + g_pMemoryBus->map.ioregs.lcd.scy) & 255;
+        uint8_t tileY = (g_pAddressBus->map.ioregs.lcd.ly + g_pAddressBus->map.ioregs.lcd.scy) & 255;
 
         // and the X coord based on the LCD's current X + X scroll
-        uint8_t tileX = ((lx + g_pMemoryBus->map.ioregs.lcd.scx) / 8) & 0x1F;
+        uint8_t tileX = ((lx + g_pAddressBus->map.ioregs.lcd.scx) / 8) & 0x1F;
 
         // we need to add 32 bytes per row: a row contains 2 tiles of 16 bytes each
         tilemapAddr += ((tileY / 8) * 32) + tileX;
@@ -152,19 +152,19 @@ static void fillPixelFifos(uint8_t lx)
     else
     {
         // for a window tile, the Y coord for the window tile is instead based on LCD Y - the window Y pos
-        uint8_t tileY = ((g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) / 8);
+        uint8_t tileY = ((g_pAddressBus->map.ioregs.lcd.ly - g_pAddressBus->map.ioregs.lcd.wy) / 8);
 
         // and the X coord is determined using only LCD X
         uint8_t tileX = (lx / 8);
 
         tilemapAddr += (tileY * 32) + tileX;
-        tileAddrOffsetForCurrentLine = (g_pMemoryBus->map.ioregs.lcd.ly - g_pMemoryBus->map.ioregs.lcd.wy) % 8;
+        tileAddrOffsetForCurrentLine = (g_pAddressBus->map.ioregs.lcd.ly - g_pAddressBus->map.ioregs.lcd.wy) % 8;
     }
 
     // pull up the current tile ID from the tilemap so we can have the right offset for fetching the actual tile
     uint8_t tileId = fetch8(tilemapAddr);
 
-    if (g_pMemoryBus->map.ioregs.lcd.control.bgWindowTileData)
+    if (g_pAddressBus->map.ioregs.lcd.control.bgWindowTileData)
     {
         // LCDC4 = 1, so tile 0 starts at 0x8000
         tileStartAddr = 0x8000 + (tileId * TILE_SIZE_BYTES);
@@ -185,9 +185,9 @@ static void fillPixelFifos(uint8_t lx)
         if (g_currentPPUState.spritesForCurrentLine[i].xPos - 8 == lx)
         {
             // compute y within sprite. these are offset by 16
-            uint8_t spriteY = g_pMemoryBus->map.ioregs.lcd.ly + 16 - g_currentPPUState.spritesForCurrentLine[i].yPos;
+            uint8_t spriteY = g_pAddressBus->map.ioregs.lcd.ly + 16 - g_currentPPUState.spritesForCurrentLine[i].yPos;
 
-            uint8_t spriteHeight = (g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8);
+            uint8_t spriteHeight = (g_pAddressBus->map.ioregs.lcd.control.objSize ? 16 : 8);
 
             if (g_currentPPUState.spritesForCurrentLine[i].flags.yFlip)
             {
@@ -210,7 +210,7 @@ static void fillPixelFifos(uint8_t lx)
         }
     }
 
-    // tiles are 8x8 pixels (64) of 2 bits each. they are stored in 16 bytes, with the first byte 
+    // tiles are 8x8 pixels (64) of 2 bits each. they are stored in 16 bytes, with the first byte
     // containing the LSBs and the second the MSBs for a full row (Y), so a row of 8 pixels takes up 2 bytes.
     // to fetch a whole tile we need 8 full pixel FIFOs, but this tile always starts at the same address.
 
@@ -247,7 +247,7 @@ static void fillPixelFifos(uint8_t lx)
 
 void ppuInit(bool skipBootrom)
 {
-    g_pMemoryBus = pGetBusPtr();
+    g_pAddressBus = pGetAddressBus();
     memset(&g_currentPPUState, 0, sizeof(SPPUState_t));
 
     if (!skipBootrom)
@@ -266,11 +266,11 @@ void ppuInit(bool skipBootrom)
  * @param cyclesToRun amount of PPU cycles to run this loop
  * @return true if frame has been completed
  */
-bool ppuLoop(int cyclesToRun)
+bool ppuTick(int cyclesToRun)
 {
     bool frameEnd = false;
 
-    while (g_pMemoryBus->map.ioregs.lcd.control.lcdPPUEnable && (cyclesToRun > 0))
+    while (g_pAddressBus->map.ioregs.lcd.control.lcdPPUEnable && (cyclesToRun > 0))
     {
         // Mode 2 -> Mode 3  -> Mode 0         -> Mode 1
         // 80     -> 172/289 -> 376 - (Mode 3) -> 4560
@@ -308,16 +308,17 @@ bool ppuLoop(int cyclesToRun)
                 if ((g_currentPPUState.currentLineCycleCount % 2) == 0)
                 {
                     SOAMSpriteAttributeObject_t currentOAMObject =
-                    *(SOAMSpriteAttributeObject_t *)&g_pMemoryBus->map.oam[g_currentPPUState.currentOAMEntry * OAM_ENTRY_SIZE_BYTES];
+                    *(SOAMSpriteAttributeObject_t *)&g_pAddressBus->map
+                     .oam[g_currentPPUState.currentOAMEntry * OAM_ENTRY_SIZE_BYTES];
 
                     if (g_currentPPUState.spriteCountCurrentLine < OAM_MAX_SPRITES_PER_LINE)
                     {
-                        uint8_t spriteHeight = g_pMemoryBus->map.ioregs.lcd.control.objSize ? 16 : 8;
+                        uint8_t spriteHeight = g_pAddressBus->map.ioregs.lcd.control.objSize ? 16 : 8;
 
                         if ((currentOAMObject.xPos > 0) && (currentOAMObject.xPos < 168))
                         {
-                            if ((g_pMemoryBus->map.ioregs.lcd.ly + 16) >= currentOAMObject.yPos &&
-                                (g_pMemoryBus->map.ioregs.lcd.ly + 16) < (currentOAMObject.yPos + spriteHeight))
+                            if ((g_pAddressBus->map.ioregs.lcd.ly + 16) >= currentOAMObject.yPos &&
+                                (g_pAddressBus->map.ioregs.lcd.ly + 16) < (currentOAMObject.yPos + spriteHeight))
                             {
                                 g_currentPPUState.spritesForCurrentLine[g_currentPPUState.spriteCountCurrentLine++] =
                                 currentOAMObject;
@@ -341,7 +342,7 @@ bool ppuLoop(int cyclesToRun)
                     {
                         if (!g_currentPPUState.discardCalculatedForCurrentLine)
                         {
-                            g_currentPPUState.fifoDiscardLeft                 = g_pMemoryBus->map.ioregs.lcd.scx % 8;
+                            g_currentPPUState.fifoDiscardLeft                 = g_pAddressBus->map.ioregs.lcd.scx % 8;
                             g_currentPPUState.discardCalculatedForCurrentLine = true;
                         }
                         fillPixelFifos(g_currentPPUState.column);
@@ -361,12 +362,12 @@ bool ppuLoop(int cyclesToRun)
 
                         if (spritePixel.color != PIXEL_COLOR_BLACK_TRANSPARENT &&
                             (!spritePixel.objToBGPrioBit || outputPixel.color == PIXEL_COLOR_BLACK_TRANSPARENT) &&
-                            g_pMemoryBus->map.ioregs.lcd.control.objEnable)
+                            g_pAddressBus->map.ioregs.lcd.control.objEnable)
                         {
                             outputPixel = spritePixel;
                         }
 
-                        SPixel_t pixel = { g_currentPPUState.column, g_pMemoryBus->map.ioregs.lcd.ly,
+                        SPixel_t pixel = { g_currentPPUState.column, g_pAddressBus->map.ioregs.lcd.ly,
                                            outputPixel.color };
                         setPixel(&pixel);
                         g_currentPPUState.column++;
@@ -386,11 +387,11 @@ bool ppuLoop(int cyclesToRun)
                     // line is done. reset counters
                     g_currentPPUState.currentLineCycleCount = 0;
 
-                    if (++g_pMemoryBus->map.ioregs.lcd.ly == LCD_VIEWPORT_Y)
+                    if (++g_pAddressBus->map.ioregs.lcd.ly == LCD_VIEWPORT_Y)
                     {
                         // go to Vblank if we processed the last line
-                        g_currentPPUState.mode                   = MODE_1;
-                        g_pMemoryBus->map.ioregs.intFlags.vblank = 1;
+                        g_currentPPUState.mode                    = MODE_1;
+                        g_pAddressBus->map.ioregs.intFlags.vblank = 1;
                     }
                     else
                     {
@@ -407,7 +408,7 @@ bool ppuLoop(int cyclesToRun)
                     if (++g_currentPPUState.currentLineCycleCount == 456)
                     {
                         // end of line, increase ly
-                        g_pMemoryBus->map.ioregs.lcd.ly++;
+                        g_pAddressBus->map.ioregs.lcd.ly++;
                         g_currentPPUState.currentLineCycleCount = 0;
                     }
                 }
@@ -415,11 +416,11 @@ bool ppuLoop(int cyclesToRun)
                 {
                     frameEnd = true;
                     debugFramebuffer();
-                    g_currentPPUState.mode                   = MODE_2;
-                    g_currentPPUState.currentLineCycleCount  = 0;
-                    g_pMemoryBus->map.ioregs.lcd.ly          = 0;
-                    g_currentPPUState.cycleCount             = 0;
-                    g_pMemoryBus->map.ioregs.intFlags.vblank = 0;
+                    g_currentPPUState.mode                    = MODE_2;
+                    g_currentPPUState.currentLineCycleCount   = 0;
+                    g_pAddressBus->map.ioregs.lcd.ly          = 0;
+                    g_currentPPUState.cycleCount              = 0;
+                    g_pAddressBus->map.ioregs.intFlags.vblank = 0;
                 }
 
                 break;
@@ -430,7 +431,7 @@ bool ppuLoop(int cyclesToRun)
         g_currentPPUState.cycleCount++;
     }
 
-    g_pMemoryBus->map.ioregs.lcd.stat.ppuMode = g_currentPPUState.mode;
+    g_pAddressBus->map.ioregs.lcd.stat.ppuMode = g_currentPPUState.mode;
     return frameEnd;
 }
 

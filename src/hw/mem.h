@@ -17,30 +17,58 @@
 
 #include "cart.h"
 
-#define GB_BUS_SIZE    0x10000
+#define GB_BUS_SIZE               0x10000
 
-#define ROMN_SIZE      0x4000
-#define VRAM_SIZE      0x2000
-#define ERAM_SIZE      0x2000
-#define WRAM_SIZE      0x2000
-#define ECHO_SIZE      0x1E00
-#define OAM_SIZE       0xA0
-#define IO_SIZE        0x80
-#define HRAM_SIZE      0x7F
+#define ROMN_SIZE                 0x4000
+#define VRAM_SIZE                 0x2000
+#define ERAM_SIZE                 0x2000
+#define WRAM_SIZE                 0x2000
+#define ECHO_SIZE                 0x1E00
+#define OAM_SIZE                  0xA0
+#define IO_SIZE                   0x80
+#define HRAM_SIZE                 0x7F
+
+#define JOYPAD_INPUT_ADDR              (0xFF00)
+#define SERIAL_TRANSFER_ADDR           (0xFF01) // 2 bytes
+#define TIMER_ADDR                     (0xFF04) // 2 bytes
+#define DIVIDER_ADDR                   (0xFF06) // 2 bytes
+#define AUDIO_MASTER_CONTROL_ADDR      (0xFF26)
+#define AUDIO_CH1_VOLUME_ENVELOPE_ADDR (0xFF12)
+#define AUDIO_CH1_CONTROL_ADDR         (0xFF14)
+#define AUDIO_CH2_VOLUME_ENVELOPE_ADDR (0xFF17)
+#define AUDIO_CH2_CONTROL_ADDR         (0xFF19)
+#define AUDIO_CH3_VOLUME_ENVELOPE_ADDR (0xFF1A)
+#define AUDIO_CH3_CONTROL_ADDR         (0xFF1E)
+#define AUDIO_CH4_VOLUME_ENVELOPE_ADDR (0xFF21)
+#define AUDIO_CH4_CONTROL_ADDR         (0xFF23)
+#define OAM_DMA_ADDR                   (0xFF46)
+#define BOOT_ROM_MAPPER_CONTROL_ADDR   (0xFF50)
+
+#define AUDIO_REGS_START_ADDR          (0xFF10)
+#define AUDIO_REGS_END_ADDR            (0xFF26)
 
 // VRAM related
-#define TILEBLOCK_SIZE 0x800
-#define TILEMAP_SIZE   0x400
+#define TILEBLOCK_SIZE            0x800
+#define TILEMAP_SIZE              0x400
 
 typedef enum
 {
     NONE = -1,
     OAM_DMA_CALLBACK,
     JOYPAD_REG_CALLBACK,
+    AUDIO_MASTER_CONTROL_CALLBACK,
+    AUDIO_CH1_CONTROL_CALLBACK,
+    AUDIO_CH2_CONTROL_CALLBACK,
+    AUDIO_CH3_CONTROL_CALLBACK,
+    AUDIO_CH4_CONTROL_CALLBACK,
+    AUDIO_CH1_VOLUME_ENVELOPE_CALLBACK,
+    AUDIO_CH2_VOLUME_ENVELOPE_CALLBACK,
+    AUDIO_CH3_VOLUME_ENVELOPE_CALLBACK,
+    AUDIO_CH4_VOLUME_ENVELOPE_CALLBACK,
     ADDRESS_CALLBACK_TYPE_COUNT
 } EAddressCallbackType_t;
 
-typedef void (*addressWriteCallback)(uint8_t);
+typedef void (*addressWriteCallback)(uint8_t, uint16_t);
 
 typedef struct __attribute__((__packed__))
 {
@@ -120,9 +148,9 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t rightVol : 3;
+    uint8_t rightVol       : 3;
     uint8_t rightVINEnable : 1;
-    uint8_t leftVol  : 3;
+    uint8_t leftVol        : 3;
     uint8_t leftVINEnable  : 1;
 } SAudio_MasterVolumeControl_t;
 
@@ -150,23 +178,23 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t indivStep : 3;
-    uint8_t direction : 1;
-    uint8_t pace      : 3;
-    uint8_t _unused   : 1;
+    uint8_t shift   : 3;
+    uint8_t negate  : 1;
+    uint8_t period  : 3;
+    uint8_t _unused : 1;
 } SAudio_ChannelSweep_t;
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t initialLength  : 6; // 0-5
-    uint8_t waveDuty : 2; // 6-7
+    uint8_t initialLength : 6; // 0-5
+    uint8_t waveDuty      : 2; // 6-7
 } SAudio_LengthDutyCycle_t;
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t envelopePeriod   : 3; // 0-2
-    uint8_t envDir        : 1; // 3
-    uint8_t initialVolume : 4; // 4-7
+    uint8_t envelopePeriod : 3; // 0-2
+    uint8_t envDir         : 1; // 3
+    uint8_t initialVolume  : 4; // 4-7
 } SAudio_VolumeEnvelope_t;
 
 typedef struct __attribute__((__packed__))
@@ -185,15 +213,15 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t _unused  : 5;
-    uint8_t dacOnOff : 2; // 5-6
-    uint8_t _unused2 : 1;
+    uint8_t _unused     : 5;
+    uint8_t outputLevel : 2; // 5-6
+    uint8_t _unused2    : 1;
 } SAudio_WaveChannel_OutputLevel_t;
 
 typedef struct __attribute__((__packed__))
 {
     uint8_t initialLength : 6; // 0-5
-    uint8_t _unused : 2; // 6-7
+    uint8_t _unused       : 2; // 6-7
 } SAudio_NoiseChannel_LengthTimer_t;
 
 typedef struct __attribute__((__packed__))
@@ -205,9 +233,9 @@ typedef struct __attribute__((__packed__))
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t _unused      : 5; // 0-2
-    uint8_t lengthEnable : 1; // 3
-    uint8_t trigger      : 1;
+    uint8_t _unused      : 5; // 0-5
+    uint8_t lengthEnable : 1; // 6
+    uint8_t trigger      : 1; // 7
 } SAudio_NoiseChannel_Control_t;
 
 typedef union __attribute__((__packed__))
@@ -218,7 +246,7 @@ typedef union __attribute__((__packed__))
     {
         const uint8_t *pRom0; // 0x0000 -> 0x3FFF
         const uint8_t *pRom1; // 0x4000 -> 0x7FFF
-        uint8_t __rompadding__[(ROMN_SIZE * 2) - (2 * sizeof(uint8_t *))];
+        uint8_t        __rompadding__[(ROMN_SIZE * 2) - (2 * sizeof(uint8_t *))];
 
         union __attribute__((__packed__))
         {
@@ -235,7 +263,7 @@ typedef union __attribute__((__packed__))
         } vram;
 
         uint8_t *pEram; // 0xA000 -> 0xBFFF
-        uint8_t __erampadding__[(ERAM_SIZE) - sizeof(uint8_t *)];
+        uint8_t  __erampadding__[(ERAM_SIZE) - sizeof(uint8_t *)];
 
         union __attribute__((__packed__))
         {
@@ -265,33 +293,33 @@ typedef union __attribute__((__packed__))
 
             struct __attribute__((__packed__))
             {
-                SAudio_ChannelSweep_t                     ch1Sweep;             // 0xFF10 | NR10
-                SAudio_LengthDutyCycle_t                  ch1LengthDuty;        // 0xFF11 | NR11
-                SAudio_VolumeEnvelope_t                   ch1VolEnvelope;       // 0xFF12 | NR12
-                uint8_t                                   ch1FreqLSB;         // 0xFF13 | NR13
-                SAudio_PeriodHighControl_t                ch1FreqMSBControl; // 0xFF14 | NR14
-                uint8_t                                   _padding1;            // 0xFF15
-                SAudio_LengthDutyCycle_t                  ch2LengthDuty;        // 0xFF16 | NR21
-                SAudio_VolumeEnvelope_t                   ch2VolEnvelope;       // 0xFF17 | NR22
-                uint8_t                                   ch2FreqLSB;         // 0xFF18 | NR23
-                SAudio_PeriodHighControl_t                ch2FreqMSBControl; // 0xFF19 | NR24
-                SAudio_WaveChannel_DACEnable_t            ch3DACEnable;         // 0xFF1A | NR30
-                uint8_t                                   ch3LengthTimer;       // 0xFF1B | NR31
-                SAudio_WaveChannel_OutputLevel_t          ch3OutputLevel;       // 0xFF1C | NR32
-                uint8_t                                   ch3FreqLSB;           // 0xFF1D | NR33
-                SAudio_PeriodHighControl_t                ch3FreqMSBControl; // 0xFF1E | NR34
-                uint8_t                                   _padding2;            // 0xFF1F
-                SAudio_NoiseChannel_LengthTimer_t         ch4LengthTimer;       // 0xFF20 | NR41
-                SAudio_VolumeEnvelope_t                   ch4VolEnvelope;       // 0xFF21 | NR42
-                SAudio_NoiseChannel_FrequencyRandomness_t ch4FreqRandom;        // 0xFF22 | NR43
-                SAudio_NoiseChannel_Control_t             ch4Control;           // 0xFF23 | NR44
-                SAudio_MasterVolumeControl_t              masterVolVINControl;  // 0xFF24
-                SAudio_ChannelPanning_t                   channelPanning;       // 0xFF25
-                SAudio_MasterControl_t                    masterControl;        // 0xFF26
+                SAudio_ChannelSweep_t                     ch1Sweep;            // 0xFF10 | NR10
+                SAudio_LengthDutyCycle_t                  ch1LengthDuty;       // 0xFF11 | NR11
+                SAudio_VolumeEnvelope_t                   ch1VolEnvelope;      // 0xFF12 | NR12
+                uint8_t                                   ch1FreqLSB;          // 0xFF13 | NR13
+                SAudio_PeriodHighControl_t                ch1FreqMSBControl;   // 0xFF14 | NR14
+                uint8_t                                   _unused;             // 0xFF15
+                SAudio_LengthDutyCycle_t                  ch2LengthDuty;       // 0xFF16 | NR21
+                SAudio_VolumeEnvelope_t                   ch2VolEnvelope;      // 0xFF17 | NR22
+                uint8_t                                   ch2FreqLSB;          // 0xFF18 | NR23
+                SAudio_PeriodHighControl_t                ch2FreqMSBControl;   // 0xFF19 | NR24
+                SAudio_WaveChannel_DACEnable_t            ch3DACEnable;        // 0xFF1A | NR30
+                uint8_t                                   ch3LengthTimer;      // 0xFF1B | NR31
+                SAudio_WaveChannel_OutputLevel_t          ch3OutputLevel;      // 0xFF1C | NR32
+                uint8_t                                   ch3FreqLSB;          // 0xFF1D | NR33
+                SAudio_PeriodHighControl_t                ch3FreqMSBControl;   // 0xFF1E | NR34
+                uint8_t                                   _unused2;            // 0xFF1F
+                SAudio_NoiseChannel_LengthTimer_t         ch4LengthTimer;      // 0xFF20 | NR41
+                SAudio_VolumeEnvelope_t                   ch4VolEnvelope;      // 0xFF21 | NR42
+                SAudio_NoiseChannel_FrequencyRandomness_t ch4FreqRandom;       // 0xFF22 | NR43
+                SAudio_NoiseChannel_Control_t             ch4Control;          // 0xFF23 | NR44
+                SAudio_MasterVolumeControl_t              masterVolVINControl; // 0xFF24
+                SAudio_ChannelPanning_t                   channelPanning;      // 0xFF25
+                SAudio_MasterControl_t                    masterControl;       // 0xFF26
             } audio;
 
             uint8_t _padding3[9];      // 0xFF27 -> 0xFF2F
-            uint8_t wavepattern[0x10]; // 0xFF30 -> 0xFF3F
+            uint8_t wavetable[0x10];   // 0xFF30 -> 0xFF3F
 
             struct __attribute__((__packed__))
             {
@@ -318,20 +346,20 @@ typedef union __attribute__((__packed__))
         uint8_t           hram[HRAM_SIZE]; // 0xFF80 -> 0xFFFE
         SInterruptFlags_t interruptEnable; // 0xFFFF
     } map;
-} bus_t;
+} SAddressBus_t;
 
-void     initializeBus(const SCartridge_t *, bool);
-void     overrideBus(bus_t *);
-void     mapRomIntoMem(uint8_t **, size_t);
+void                 initializeBus(const SCartridge_t *, bool);
+void                 overrideBus(SAddressBus_t *);
+void                 mapRomIntoMem(uint8_t **, size_t);
 
-void     bindCallbackToAddress(uint16_t, EAddressCallbackType_t, addressWriteCallback);
+void                 registerAddressCallback(uint16_t, EAddressCallbackType_t, addressWriteCallback);
 
-const uint8_t  fetch8(uint16_t);
-const uint16_t fetch16(uint16_t);
+const uint8_t        fetch8(uint16_t);
+const uint16_t       fetch16(uint16_t);
 
-void     write8(uint8_t, uint16_t);
-void     write16(uint16_t, uint16_t);
+void                 write8(uint8_t, uint16_t);
+void                 write16(uint16_t, uint16_t);
 
-bus_t   *pGetBusPtr(void);
+SAddressBus_t *const pGetAddressBus(void);
 
 #endif // !_MEM_H_

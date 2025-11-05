@@ -11,7 +11,7 @@
 #include <string.h>
 #include <dirent.h>
 
-static void set_state(cJSON *, cpu_t *, bus_t *);
+static void set_state(cJSON *, SCPURegisters_t *, SAddressBus_t *);
 
 void runTests(void)
 {
@@ -26,11 +26,11 @@ void runTests(void)
 
     struct dirent *pEntry;
 
-    cpu_t cpu = { 0 };
-    cpu_t finalCpu = { 0 };
+    SCPURegisters_t cpu = { 0 };
+    SCPURegisters_t finalCpu = { 0 };
 
-    bus_t bus = {0};
-    bus_t busFinal = {0};
+    SAddressBus_t bus = {0};
+    SAddressBus_t busFinal = {0};
 
     cJSON *json_array = NULL, *json_item = NULL;
     char *content = NULL;
@@ -89,14 +89,14 @@ void runTests(void)
                         posCounter++;
                     }
 
-                    if (!memcmp(&cpu, &finalCpu, sizeof(cpu_t)))
+                    if (!memcmp(&cpu, &finalCpu, sizeof(SCPURegisters_t)))
                     {
                         printf("cpu mismatch in instr file %s, name %d\n", fullpath, posCounter);
                     }
 
                     if (checkBus && passedBus)
                     {
-                        if (!memcmp(&bus, &busFinal, sizeof(bus_t)))
+                        if (!memcmp(&bus, &busFinal, sizeof(SAddressBus_t)))
                         {
                             printf("bus mismatches in instr file %s:\n", fullpath);
                             for (unsigned int i = 0; i < GB_BUS_SIZE; i++)
@@ -119,10 +119,10 @@ void runTests(void)
     }
 }
 
-static void set_state(cJSON *state, cpu_t *pCpu, bus_t *pBus)
+static void set_state(cJSON *state, SCPURegisters_t *pCpu, SAddressBus_t *pBus)
 {
-    memset(pCpu, 0, sizeof(cpu_t));
-    memset(pBus, 0, sizeof(bus_t));
+    memset(pCpu, 0, sizeof(SCPURegisters_t));
+    memset(pBus, 0, sizeof(SAddressBus_t));
     memset(&pBus->map.ioregs.joypad, 0xFF, 1);
 
     if (cJSON_IsObject(state))

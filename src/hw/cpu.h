@@ -82,7 +82,7 @@ typedef union __attribute__((__packed__))
 
     uint16_t reg16_arr[6];
     uint8_t  reg8_arr[12];
-} cpu_t;
+} SCPURegisters_t;
 
 // functions
 /**
@@ -90,7 +90,7 @@ typedef union __attribute__((__packed__))
  */
 void resetCpu(bool);
 
-void overrideCpu(cpu_t *);
+void overrideCpu(SCPURegisters_t *);
 
 /**
  * @brief set a specific flag
@@ -120,7 +120,7 @@ void jumpCpu(uint16_t);
 /**
  * @brief retrieve constptr to cpu object
  */
-const cpu_t *getCpuObject(void);
+const SCPURegisters_t *pGetCPURegisters(void);
 
 /**
  * @brief set a specific 16-bit register
@@ -137,6 +137,7 @@ void resetIME();
 bool checkIME();
 
 bool checkHalted();
+bool checkStopped();
 
 /**
  * @brief map instruction to actual decoding function

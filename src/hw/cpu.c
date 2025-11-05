@@ -1,5 +1,5 @@
 /**
- * @file cpu.c
+ * @file g_cpu.registers.c
  * @author Toesoe
  * @brief seaboy SM83 emulation
  * @version 0.1
@@ -20,29 +20,35 @@
 #include "instr.h"
 #include "mem.h"
 
-static cpu_t  cpu;
-static bus_t *pBus;
+typedef struct
+{
+    SCPURegisters_t registers;
+    bool interruptMasterEnable;
+    bool isHalted;  // HALT
+    bool isStopped; // STOP
+} SCPU_t;
 
-static bool   imeFlag       = false;
-static bool   isHalted      = false;
+static SCPU_t g_cpu;
+static SAddressBus_t *g_pBus;
+
 static bool   haltOnUnknown = false;
 
 static int    getRegisterIndexByOpcodeNibble(uint8_t);
 static void   cpuSkipBootrom(void);
 
 /**
- * @brief reset cpu to initial state
+ * @brief reset g_cpu.registers to initial state
  */
 void resetCpu(bool skipBootrom)
 {
-    memset(&cpu, 0x00, sizeof(cpu));
-    imeFlag      = false;
-    instrSetCpuPtr(&cpu);
-    pBus = pGetBusPtr();
+    memset(&g_cpu.registers, 0x00, sizeof(g_cpu.registers));
+    g_cpu.interruptMasterEnable  = false;
+    instrSetCpuPtr(&g_cpu.registers);
+    g_pBus = pGetAddressBus();
 
     if (!skipBootrom)
     {
-        cpu.reg16.pc = 0x0;
+        g_cpu.registers.reg16.pc = 0x0;
     }
     else
     {
@@ -53,9 +59,9 @@ void resetCpu(bool skipBootrom)
 /**
  * useful for unit testing instructions
  */
-void overrideCpu(cpu_t *pCpu)
+void overrideCpu(SCPURegisters_t *pCpu)
 {
-    memcpy(&cpu, pCpu, sizeof(cpu_t));
+    memcpy(&g_cpu.registers, pCpu, sizeof(SCPURegisters_t));
 }
 
 /**
@@ -65,7 +71,7 @@ void overrideCpu(cpu_t *pCpu)
  */
 void setFlag(Flag flag)
 {
-    cpu.reg8.f |= (1 << flag);
+    g_cpu.registers.reg8.f |= (1 << flag);
 }
 
 /**
@@ -75,7 +81,7 @@ void setFlag(Flag flag)
  */
 void resetFlag(Flag flag)
 {
-    cpu.reg8.f &= ~(1 << flag);
+    g_cpu.registers.reg8.f &= ~(1 << flag);
 }
 
 /**
@@ -87,7 +93,7 @@ void resetFlag(Flag flag)
  */
 bool testFlag(Flag flag)
 {
-    return cpu.reg8.f & (1 << flag);
+    return g_cpu.registers.reg8.f & (1 << flag);
 }
 
 /**
@@ -96,7 +102,7 @@ bool testFlag(Flag flag)
  */
 void stepCpu(int incrementBy)
 {
-    cpu.reg16.pc += incrementBy;
+    g_cpu.registers.reg16.pc += incrementBy;
 }
 
 /**
@@ -106,35 +112,40 @@ void stepCpu(int incrementBy)
  */
 void jumpCpu(uint16_t addr)
 {
-    cpu.reg16.sp = addr;
+    g_cpu.registers.reg16.sp = addr;
 }
 
 /**
- * @brief retrieve constptr to cpu object
+ * @brief retrieve constptr to g_cpu.registers object
  */
-const cpu_t *getCpuObject(void)
+const SCPURegisters_t *pGetCPURegisters(void)
 {
-    return (const cpu_t *)&cpu;
+    return (const SCPURegisters_t *)&g_cpu.registers;
 }
 
 void setIME()
 {
-    imeFlag = true;
+    g_cpu.interruptMasterEnable = true;
 }
 
 void resetIME()
 {
-    imeFlag = false;
+    g_cpu.interruptMasterEnable = false;
 }
 
 bool checkIME()
 {
-    return imeFlag;
+    return g_cpu.interruptMasterEnable;
 }
 
 bool checkHalted()
 {
-    return isHalted;
+    return g_cpu.isHalted;
+}
+
+bool checkStopped()
+{
+    return g_cpu.isStopped;
 }
 
 /**
@@ -145,7 +156,7 @@ bool checkHalted()
  */
 void setRegister16(Register16 reg, uint16_t value)
 {
-    cpu.reg16_arr[reg] = value;
+    g_cpu.registers.reg16_arr[reg] = value;
 }
 
 /**
@@ -156,12 +167,12 @@ void setRegister16(Register16 reg, uint16_t value)
  */
 void setRegister8(Register8 reg, uint8_t value)
 {
-    cpu.reg8_arr[reg] = value;
+    g_cpu.registers.reg8_arr[reg] = value;
 }
 
 static int decodeCbPrefix()
 {
-    uint8_t instr     = fetch8(cpu.reg16.pc + 1); // CB prefix takes next instruction
+    uint8_t instr     = fetch8(g_cpu.registers.reg16.pc + 1); // CB prefix takes next instruction
     uint8_t hi        = instr >> 4;
     uint8_t lo        = instr & 15;
 
@@ -180,7 +191,7 @@ static int decodeCbPrefix()
             else if (lo == 0x06)
             {
                 // RLC (HL)
-                rlc_addr(cpu.reg16.hl);
+                rlc_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -196,7 +207,7 @@ static int decodeCbPrefix()
             else if (lo == 0x0E)
             {
                 // RRC (HL)
-                rrc_addr(cpu.reg16.hl);
+                rrc_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -217,7 +228,7 @@ static int decodeCbPrefix()
             else if (lo == 0x06)
             {
                 // RL (HL)
-                rl_addr(cpu.reg16.hl);
+                rl_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -233,7 +244,7 @@ static int decodeCbPrefix()
             else if (lo == 0x0E)
             {
                 // RR (HL)
-                rr_addr(cpu.reg16.hl);
+                rr_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -254,7 +265,7 @@ static int decodeCbPrefix()
             else if (lo == 0x06)
             {
                 // SLA (HL)
-                sla_addr(cpu.reg16.hl);
+                sla_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -270,7 +281,7 @@ static int decodeCbPrefix()
             else if (lo == 0x0E)
             {
                 // SRA (HL)
-                sra_addr(cpu.reg16.hl);
+                sra_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -291,7 +302,7 @@ static int decodeCbPrefix()
             else if (lo == 0x06)
             {
                 // SWAP (HL)
-                swap8_addr(cpu.reg16.hl);
+                swap8_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -307,7 +318,7 @@ static int decodeCbPrefix()
             else if (lo == 0x0E)
             {
                 // SRL (HL)
-                srl_addr(cpu.reg16.hl);
+                srl_addr(g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -326,7 +337,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(0, cpu.reg16.hl);
+                bit_n_addr(0, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x07)
@@ -339,7 +350,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                bit_n_addr(1, cpu.reg16.hl);
+                bit_n_addr(1, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x0F)
@@ -357,7 +368,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(2, cpu.reg16.hl);
+                bit_n_addr(2, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x07)
@@ -370,7 +381,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                bit_n_addr(3, cpu.reg16.hl);
+                bit_n_addr(3, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x0F)
@@ -388,7 +399,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(4, cpu.reg16.hl);
+                bit_n_addr(4, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x07)
@@ -401,7 +412,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                bit_n_addr(5, cpu.reg16.hl);
+                bit_n_addr(5, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x0F)
@@ -419,7 +430,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                bit_n_addr(6, cpu.reg16.hl);
+                bit_n_addr(6, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x07)
@@ -432,7 +443,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                bit_n_addr(7, cpu.reg16.hl);
+                bit_n_addr(7, g_cpu.registers.reg16.hl);
                 addCycles = 1;
             }
             else if (lo == 0x0F)
@@ -450,7 +461,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                reset_n_addr(0, cpu.reg16.hl);
+                reset_n_addr(0, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -463,7 +474,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                reset_n_addr(1, cpu.reg16.hl);
+                reset_n_addr(1, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -481,7 +492,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                reset_n_addr(2, cpu.reg16.hl);
+                reset_n_addr(2, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -494,7 +505,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                reset_n_addr(3, cpu.reg16.hl);
+                reset_n_addr(3, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -512,7 +523,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                reset_n_addr(4, cpu.reg16.hl);
+                reset_n_addr(4, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -525,7 +536,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                reset_n_addr(5, cpu.reg16.hl);
+                reset_n_addr(5, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -543,7 +554,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                reset_n_addr(6, cpu.reg16.hl);
+                reset_n_addr(6, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -556,7 +567,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                reset_n_addr(7, cpu.reg16.hl);
+                reset_n_addr(7, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -574,7 +585,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                set_n_addr(0, cpu.reg16.hl);
+                set_n_addr(0, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -587,7 +598,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                set_n_addr(1, cpu.reg16.hl);
+                set_n_addr(1, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -605,7 +616,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                set_n_addr(2, cpu.reg16.hl);
+                set_n_addr(2, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -618,7 +629,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                set_n_addr(3, cpu.reg16.hl);
+                set_n_addr(3, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -636,7 +647,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                set_n_addr(4, cpu.reg16.hl);
+                set_n_addr(4, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -649,7 +660,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                set_n_addr(5, cpu.reg16.hl);
+                set_n_addr(5, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -667,7 +678,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x06)
             {
-                set_n_addr(6, cpu.reg16.hl);
+                set_n_addr(6, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x07)
@@ -680,7 +691,7 @@ static int decodeCbPrefix()
             }
             else if (lo == 0x0E)
             {
-                set_n_addr(7, cpu.reg16.hl);
+                set_n_addr(7, g_cpu.registers.reg16.hl);
                 addCycles = 2;
             }
             else if (lo == 0x0F)
@@ -729,20 +740,20 @@ int executeInstruction(uint8_t instr)
         case 0x12: // LD (DE),A
         {
             Register16 reg = BC + hi; // use high nibble
-            ld_addr_reg8(cpu.reg16_arr[reg], A);
+            ld_addr_reg8(g_cpu.registers.reg16_arr[reg], A);
             cycleCount = 2;
             break;
         }
         case 0x22: // LD (HL+),A
         {
             cycleCount = 2;
-            ld_addr_reg8(cpu.reg16.hl++, A);
+            ld_addr_reg8(g_cpu.registers.reg16.hl++, A);
             break;
         }
         case 0x32: // LD (HL-),A
         {
             cycleCount = 2;
-            ld_addr_reg8(cpu.reg16.hl--, A);
+            ld_addr_reg8(g_cpu.registers.reg16.hl--, A);
             break;
         }
         case 0x06: // LD B,d8
@@ -770,30 +781,30 @@ int executeInstruction(uint8_t instr)
         {
             incrementProgramCounterBy = 2;
             cycleCount                = 3;
-            ld_addr_imm8(cpu.reg16.hl);
+            ld_addr_imm8(g_cpu.registers.reg16.hl);
             break;
         }
         case 0x0A: // LD A,(BC)
         {
-            ld_reg8_addr(A, cpu.reg16.bc);
+            ld_reg8_addr(A, g_cpu.registers.reg16.bc);
             cycleCount = 2;
             break;
         }
         case 0x1A: // LD A,(DE)
         {
-            ld_reg8_addr(A, cpu.reg16.de);
+            ld_reg8_addr(A, g_cpu.registers.reg16.de);
             cycleCount = 2;
             break;
         }
         case 0x2A: // LD A,(HL+)
         {
-            ld_reg8_addr(A, cpu.reg16.hl++);
+            ld_reg8_addr(A, g_cpu.registers.reg16.hl++);
             cycleCount = 2;
             break;
         }
         case 0x3A: // LD A,(HL-)
         {
-            ld_reg8_addr(A, cpu.reg16.hl--);
+            ld_reg8_addr(A, g_cpu.registers.reg16.hl--);
             cycleCount = 2;
             break;
         }
@@ -828,39 +839,39 @@ int executeInstruction(uint8_t instr)
         case 0xE2: // LD (0xFF00 + C),A
         {
             cycleCount = 2;
-            ld_addr_reg8(0xFF00 + cpu.reg8.c, A);
+            ld_addr_reg8(0xFF00 + g_cpu.registers.reg8.c, A);
             break;
         }
         case 0xF2: // LD A, (0xFF00 + C)
         {
-            ld_reg8_addr(A, 0xFF00 + cpu.reg8.c);
+            ld_reg8_addr(A, 0xFF00 + g_cpu.registers.reg8.c);
             cycleCount = 2;
             break;
         }
         case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit imm unsigned)
         {
-            ld_addr_reg8(0xFF00 + fetch8(cpu.reg16.pc + 1), A);
+            ld_addr_reg8(0xFF00 + fetch8(g_cpu.registers.reg16.pc + 1), A);
             incrementProgramCounterBy = 2;
             cycleCount                = 3;
             break;
         }
         case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
         {
-            ld_reg8_addr(A, 0xFF00 + fetch8(cpu.reg16.pc + 1));
+            ld_reg8_addr(A, 0xFF00 + fetch8(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 2;
             cycleCount                = 3;
             break;
         }
         case 0xEA: // LD (a16), A (load from A to addr)
         {
-            ld_addr_reg8(fetch16(cpu.reg16.pc + 1), A);
+            ld_addr_reg8(fetch16(g_cpu.registers.reg16.pc + 1), A);
             incrementProgramCounterBy = 3;
             cycleCount                = 4;
             break;
         }
         case 0xFA: // LD A, (a16) (load from addr to A)
         {
-            ld_reg8_addr(A, fetch16(cpu.reg16.pc + 1));
+            ld_reg8_addr(A, fetch16(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 3;
             cycleCount                = 4;
             break;
@@ -968,11 +979,11 @@ int executeInstruction(uint8_t instr)
         {
             if (lo == 0x04)
             {
-                inc8_mem(cpu.reg16.hl);
+                inc8_mem(g_cpu.registers.reg16.hl);
             }
             else
             {
-                dec8_mem(cpu.reg16.hl);
+                dec8_mem(g_cpu.registers.reg16.hl);
             }
             cycleCount = 3;
             break;
@@ -1221,9 +1232,9 @@ int executeInstruction(uint8_t instr)
         case 0xD9: // RETI
         {
             ret();
-            incrementProgramCounterBy = 0;
-            imeFlag                   = true;
-            cycleCount                = 4;
+            incrementProgramCounterBy   = 0;
+            g_cpu.interruptMasterEnable = true;
+            cycleCount                  = 4;
             break;
         }
 
@@ -1289,15 +1300,18 @@ int executeInstruction(uint8_t instr)
 
         case 0x76: // HALT
         {
-            cycleCount = 1;
-            isHalted   = true;
+            cycleCount                  = 1;
+            g_cpu.isHalted              = true;
+            g_cpu.interruptMasterEnable = false;
             break;
         }
 
         case 0x10: // STOP
         {
-            cycleCount = 2;
-            imeFlag    = false;
+            cycleCount                  = 2;
+            g_cpu.isStopped             = true;
+            g_cpu.interruptMasterEnable = false;
+            g_pBus->map.ioregs.divRegister = 0;
             break;
         }
 
@@ -1331,14 +1345,14 @@ int executeInstruction(uint8_t instr)
 
         case 0xF3: // DI
         {
-            imeFlag    = false;
+            g_cpu.interruptMasterEnable    = false;
             cycleCount = 1;
             break;
         }
 
         case 0xFB: // EI
         {
-            imeFlag    = true;
+            g_cpu.interruptMasterEnable    = true;
             cycleCount = 1;
             break;
         }
@@ -1348,7 +1362,7 @@ int executeInstruction(uint8_t instr)
         case 0x29: // ADD HL, HL
         case 0x39: // ADD HL, SP
         {
-            add16_hl_n(cpu.reg16_arr[BC + hi]); // AF = 0, BC = 1, etc
+            add16_hl_n(g_cpu.registers.reg16_arr[BC + hi]); // AF = 0, BC = 1, etc
             cycleCount = 2;
             break;
         }
@@ -1370,7 +1384,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xC6: // ADD a, d8
         {
-            add8_a_n(fetch8(cpu.reg16.pc + 1));
+            add8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             cycleCount                = 2;
             incrementProgramCounterBy = 2;
             break;
@@ -1378,7 +1392,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xD6: // SUB d8
         {
-            sub8_n_a(fetch8(cpu.reg16.pc + 1));
+            sub8_n_a(fetch8(g_cpu.registers.reg16.pc + 1));
             cycleCount                = 2;
             incrementProgramCounterBy = 2;
             break;
@@ -1386,7 +1400,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xE6: // AND d8
         {
-            and8_a_n(fetch8(cpu.reg16.pc + 1));
+            and8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             cycleCount                = 2;
             incrementProgramCounterBy = 2;
             break;
@@ -1394,7 +1408,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xF6: // ADD a, d8
         {
-            or8_a_n(fetch8(cpu.reg16.pc + 1));
+            or8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             cycleCount                = 2;
             incrementProgramCounterBy = 2;
             break;
@@ -1402,7 +1416,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xCE: // ADC a, d8
         {
-            adc8_a_n(fetch8(cpu.reg16.pc + 1));
+            adc8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             cycleCount                = 2;
             incrementProgramCounterBy = 2;
             break;
@@ -1410,7 +1424,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xDE: // SBC a, d8
         {
-            sbc8_a_n(fetch8(cpu.reg16.pc + 1));
+            sbc8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 2;
             cycleCount                = 2;
             break;
@@ -1418,7 +1432,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xEE: // XOR d8
         {
-            xor8_a_n(fetch8(cpu.reg16.pc + 1));
+            xor8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 2;
             cycleCount                = 2;
             break;
@@ -1426,7 +1440,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xFE: // CP d8
         {
-            cp8_a_n(fetch8(cpu.reg16.pc + 1));
+            cp8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 2;
             cycleCount                = 2;
             break;
@@ -1434,7 +1448,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xE8: // ADD SP, s8
         {
-            setRegister16(SP, (cpu.reg16.sp + ((int8_t)fetch8(cpu.reg16.pc + 1))));
+            setRegister16(SP, (g_cpu.registers.reg16.sp + ((int8_t)fetch8(g_cpu.registers.reg16.pc + 1))));
             incrementProgramCounterBy = 2;
             cycleCount                = 4;
             break;
@@ -1442,7 +1456,7 @@ int executeInstruction(uint8_t instr)
 
         case 0x08: // LD (a16), SP
         {
-            write16(cpu.reg16.sp, fetch16(cpu.reg16.pc + 1));
+            write16(g_cpu.registers.reg16.sp, fetch16(g_cpu.registers.reg16.pc + 1));
             incrementProgramCounterBy = 3;
             cycleCount                = 5;
             break;
@@ -1450,7 +1464,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xF8: // LD HL, SP+s8
         {
-            setRegister16(HL, (cpu.reg16.sp + ((int8_t)fetch8(cpu.reg16.pc + 1))));
+            setRegister16(HL, (g_cpu.registers.reg16.sp + ((int8_t)fetch8(g_cpu.registers.reg16.pc + 1))));
             incrementProgramCounterBy = 2;
             cycleCount                = 3;
             break;
@@ -1458,7 +1472,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xF9: // LD SP, HL
         {
-            setRegister16(SP, cpu.reg16.hl);
+            setRegister16(SP, g_cpu.registers.reg16.hl);
             cycleCount = 2;
             break;
         }
@@ -1495,7 +1509,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        ld_reg8_addr(regL, cpu.reg16.hl);
+                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
                     break;
@@ -1520,7 +1534,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        ld_reg8_addr(regL, cpu.reg16.hl);
+                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
                     break;
@@ -1545,7 +1559,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        ld_reg8_addr(regL, cpu.reg16.hl);
+                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
                     break;
@@ -1568,11 +1582,11 @@ int executeInstruction(uint8_t instr)
 
                     if (hlLeft)
                     {
-                        ld_addr_reg8(cpu.reg16.hl, regR);
+                        ld_addr_reg8(g_cpu.registers.reg16.hl, regR);
                     }
                     else if (hl)
                     {
-                        ld_reg8_addr(regL, cpu.reg16.hl);
+                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
                     else
                     {
@@ -1588,34 +1602,34 @@ int executeInstruction(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // ADD, B to L
-                        add8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
+                        add8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                     }
                     else if (lo == 0x06)
                     {
                         // ADD (HL)
-                        add8_a_n(fetch8(cpu.reg16.hl));
+                        add8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x07)
                     {
                         // ADD A
-                        add8_a_n(cpu.reg8_arr[A]);
+                        add8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     else if (lo < 0x0E)
                     {
                         // ADC, B to L
-                        adc8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
+                        adc8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
                         // ADC (HL)
-                        adc8_a_n(fetch8(cpu.reg16.hl));
+                        adc8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x0F)
                     {
                         // ADC A
-                        adc8_a_n(cpu.reg8_arr[A]);
+                        adc8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     break;
                 }
@@ -1626,34 +1640,34 @@ int executeInstruction(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // SUB, B to L
-                        sub8_n_a(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
+                        sub8_n_a(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                     }
                     else if (lo == 0x06)
                     {
                         // SUB (HL)
-                        sub8_n_a(fetch8(cpu.reg16.hl));
+                        sub8_n_a(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x07)
                     {
                         // SUB A
-                        sub8_n_a(cpu.reg8_arr[A]);
+                        sub8_n_a(g_cpu.registers.reg8_arr[A]);
                     }
                     else if (lo < 0x0E)
                     {
                         // SBC, B to L
-                        sbc8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
+                        sbc8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
                         // SBC (HL)
-                        sbc8_a_n(fetch8(cpu.reg16.hl));
+                        sbc8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x0F)
                     {
                         // SBC A
-                        sbc8_a_n(cpu.reg8_arr[A]);
+                        sbc8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     break;
                 }
@@ -1664,35 +1678,35 @@ int executeInstruction(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // AND, B to L
-                        and8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
+                        and8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                         break;
                     }
                     else if (lo == 0x06)
                     {
                         // AND (HL)
-                        and8_a_n(fetch8(cpu.reg16.hl));
+                        and8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x07)
                     {
                         // AND A
-                        and8_a_n(cpu.reg8_arr[A]);
+                        and8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     else if (lo < 0x0E)
                     {
                         // XOR, B to L
-                        xor8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
+                        xor8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
                         // XOR (HL)
-                        xor8_a_n(fetch8(cpu.reg16.hl));
+                        xor8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x0F)
                     {
                         // XOR A
-                        xor8_a_n(cpu.reg8_arr[A]);
+                        xor8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     break;
                 }
@@ -1703,41 +1717,41 @@ int executeInstruction(uint8_t instr)
                     if (lo < 0x06)
                     {
                         // OR, B to L
-                        or8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
+                        or8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo)]);
                         break;
                     }
                     else if (lo == 0x06)
                     {
                         // OR (HL)
-                        or8_a_n(fetch8(cpu.reg16.hl));
+                        or8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x07)
                     {
                         // OR A
-                        or8_a_n(cpu.reg8_arr[A]);
+                        or8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     else if (lo < 0x0E)
                     {
                         // CP, B to L
-                        cp8_a_n(cpu.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
+                        cp8_a_n(g_cpu.registers.reg8_arr[getRegisterIndexByOpcodeNibble(lo - 0x08)]);
                     }
                     else if (lo == 0x0E)
                     {
                         // CP (HL)
-                        cp8_a_n(fetch8(cpu.reg16.hl));
+                        cp8_a_n(fetch8(g_cpu.registers.reg16.hl));
                         hl = true;
                     }
                     else if (lo == 0x0F)
                     {
                         // CP A
-                        cp8_a_n(cpu.reg8_arr[A]);
+                        cp8_a_n(g_cpu.registers.reg8_arr[A]);
                     }
                     break;
                 }
                 default:
                 {
-                    printf("unknown instruction 0x%2x at 0x%04x\n", instr, cpu.reg16.pc);
+                    printf("unknown instruction 0x%2x at 0x%04x\n", instr, g_cpu.registers.reg16.pc);
                     if (haltOnUnknown)
                     {
                         while (true);
@@ -1763,105 +1777,98 @@ int handleInterrupts(void)
 
     if (checkIME())
     {
-        if (pBus->map.interruptEnable.vblank && pBus->map.ioregs.intFlags.vblank)
+        if (g_pBus->map.interruptEnable.vblank && g_pBus->map.ioregs.intFlags.vblank)
         {
             fired                            = true;
-            pBus->map.ioregs.intFlags.vblank = 0;
+            g_pBus->map.ioregs.intFlags.vblank = 0;
             call_irq_subroutine(0x40);
         }
-        else if (pBus->map.interruptEnable.lcd && pBus->map.ioregs.intFlags.lcd)
+        else if (g_pBus->map.interruptEnable.lcd && g_pBus->map.ioregs.intFlags.lcd)
         {
-            if ((pBus->map.ioregs.lcd.stat.LYCIntSel && pBus->map.ioregs.lcd.stat.lycEqLy) ||
-                (pBus->map.ioregs.lcd.stat.mode0IntSel && (pBus->map.ioregs.lcd.stat.ppuMode == 0)) ||
-                (pBus->map.ioregs.lcd.stat.mode1IntSel && (pBus->map.ioregs.lcd.stat.ppuMode == 1)) ||
-                (pBus->map.ioregs.lcd.stat.mode2IntSel && (pBus->map.ioregs.lcd.stat.ppuMode == 2)))
+            if ((g_pBus->map.ioregs.lcd.stat.LYCIntSel && g_pBus->map.ioregs.lcd.stat.lycEqLy) ||
+                (g_pBus->map.ioregs.lcd.stat.mode0IntSel && (g_pBus->map.ioregs.lcd.stat.ppuMode == 0)) ||
+                (g_pBus->map.ioregs.lcd.stat.mode1IntSel && (g_pBus->map.ioregs.lcd.stat.ppuMode == 1)) ||
+                (g_pBus->map.ioregs.lcd.stat.mode2IntSel && (g_pBus->map.ioregs.lcd.stat.ppuMode == 2)))
             {
                 // STAT int
                 fired                         = true;
-                pBus->map.ioregs.intFlags.lcd = 0;
+                g_pBus->map.ioregs.intFlags.lcd = 0;
                 call_irq_subroutine(0x48);
             }
         }
-        else if (pBus->map.interruptEnable.timer && pBus->map.ioregs.intFlags.timer)
+        else if (g_pBus->map.interruptEnable.timer && g_pBus->map.ioregs.intFlags.timer)
         {
             fired                           = true;
-            pBus->map.ioregs.intFlags.timer = 0;
+            g_pBus->map.ioregs.intFlags.timer = 0;
             call_irq_subroutine(0x50);
         }
-        else if (pBus->map.interruptEnable.serial && pBus->map.ioregs.intFlags.serial)
+        else if (g_pBus->map.interruptEnable.serial && g_pBus->map.ioregs.intFlags.serial)
         {
             fired                            = true;
-            pBus->map.ioregs.intFlags.serial = 0;
+            g_pBus->map.ioregs.intFlags.serial = 0;
             call_irq_subroutine(0x58);
         }
-        else if (pBus->map.interruptEnable.joypad && pBus->map.ioregs.intFlags.joypad)
+        else if (g_pBus->map.interruptEnable.joypad && g_pBus->map.ioregs.intFlags.joypad)
         {
             fired                            = true;
-            pBus->map.ioregs.intFlags.joypad = 0;
+            g_pBus->map.ioregs.intFlags.joypad = 0;
             call_irq_subroutine(0x60);
         }
 
         if (fired)
         {
-            if (isHalted)
+            if (g_cpu.isHalted)
             {
-                isHalted = false;
+                g_cpu.isHalted = false;
             }
-            imeFlag = false;
+            g_cpu.interruptMasterEnable = false;
             return 5;
         }
     }
     return 0;
 }
 
-void handleTimers(int mCycles)
+void handleTimers(int cpuCycles)
 {
-    static int localCycles = 0;
-    uint16_t   localTim    = pBus->map.ioregs.timers.TIMA;
-    while (mCycles--)
+    static uint16_t divCounter = 0;
+    static uint8_t  lastDivBit[4] = { 0 };
+
+    while (cpuCycles--)
     {
-        // Handle the DIV register
-        localCycles++;
-        if (localCycles == 64)
-        {
-            pBus->map.ioregs.divRegister++;
-            localCycles = 0;
-        }
+        divCounter++;
 
-        // Handle TIMA increment
-        if (pBus->map.ioregs.timers.TAC.enable)
-        {
-            static int timerCycles = 0;
-            timerCycles++;
+        // increment div for every 64 cpu cycles (16384Hz)
+        if ((divCounter & 0x3F) == 0) { g_pBus->map.ioregs.divRegister++; }
 
-            int timerThreshold = 0;
-            switch (pBus->map.ioregs.timers.TAC.clockSelect)
+        if (g_pBus->map.ioregs.timers.TAC.enable)
+        {
+            int bit;
+            switch (g_pBus->map.ioregs.timers.TAC.clockSelect)
             {
                 case 0:
-                    timerThreshold = 256;
-                    break;
+                    bit = 9;
+                    break; // 4096 Hz
                 case 1:
-                    timerThreshold = 4;
-                    break;
+                    bit = 3;
+                    break; // 262144 Hz
                 case 2:
-                    timerThreshold = 16;
-                    break;
+                    bit = 5;
+                    break; // 65536 Hz
                 case 3:
-                    timerThreshold = 64;
-                    break;
+                    bit = 7;
+                    break; // 16384 Hz
             }
 
-            if (timerCycles >= timerThreshold)
-            {
-                timerCycles = 0;
-                localTim++;
-
-                if (localTim == 0x100) // TIMA overflow
-                {
-                    localTim                        = pBus->map.ioregs.timers.TMA;
-                    pBus->map.ioregs.intFlags.timer = 1;
+            uint8_t currentBit = (divCounter >> bit) & 1;
+            if (lastDivBit[g_pBus->map.ioregs.timers.TAC.clockSelect] && !currentBit)
+            { 
+                uint8_t tima = ++g_pBus->map.ioregs.timers.TIMA;
+                if (tima == 0x00) {
+                    g_pBus->map.ioregs.timers.TIMA = g_pBus->map.ioregs.timers.TMA;
+                    g_pBus->map.ioregs.intFlags.timer = 1;
                 }
             }
+            lastDivBit[g_pBus->map.ioregs.timers.TAC.clockSelect] = currentBit;
         }
     }
 }
@@ -1894,23 +1901,23 @@ static int getRegisterIndexByOpcodeNibble(uint8_t lo)
  */
 static void cpuSkipBootrom(void)
 {
-    cpu.reg8.a   = 0x01;
-    cpu.reg8.f   = 0xB0;
-    cpu.reg8.b   = 0x00;
-    cpu.reg8.c   = 0x13;
-    cpu.reg8.d   = 0x00;
-    cpu.reg8.e   = 0xD8;
-    cpu.reg8.h   = 0x01;
-    cpu.reg8.l   = 0x4D;
-    cpu.reg16.sp = 0xFFFE;
-    cpu.reg16.pc = 0x100;
-    memset(&pBus->map.ioregs.lcd.control, 0x91, 1);
-    memset(&pBus->map.ioregs.lcd.stat, 0x85, 1);
-    memset(&pBus->map.ioregs.lcd.dma, 0xFF, 1);
-    memset(&pBus->map.ioregs.lcd.bgp, 0xFC, 1);
-    memset(&pBus->map.ioregs.joypad, 0xCF, 1);
-    memset(&pBus->map.ioregs.divRegister, 0x18, 1);
-    memset(&pBus->map.ioregs.timers.TAC, 0xF8, 1);
-    memset(&pBus->map.ioregs.intFlags, 0xE1, 1);
+    g_cpu.registers.reg8.a   = 0x01;
+    g_cpu.registers.reg8.f   = 0xB0;
+    g_cpu.registers.reg8.b   = 0x00;
+    g_cpu.registers.reg8.c   = 0x13;
+    g_cpu.registers.reg8.d   = 0x00;
+    g_cpu.registers.reg8.e   = 0xD8;
+    g_cpu.registers.reg8.h   = 0x01;
+    g_cpu.registers.reg8.l   = 0x4D;
+    g_cpu.registers.reg16.sp = 0xFFFE;
+    g_cpu.registers.reg16.pc = 0x100;
+    memset(&g_pBus->map.ioregs.lcd.control, 0x91, 1);
+    memset(&g_pBus->map.ioregs.lcd.stat, 0x85, 1);
+    memset(&g_pBus->map.ioregs.lcd.dma, 0xFF, 1);
+    memset(&g_pBus->map.ioregs.lcd.bgp, 0xFC, 1);
+    memset(&g_pBus->map.ioregs.joypad, 0xCF, 1);
+    memset(&g_pBus->map.ioregs.divRegister, 0x18, 1);
+    memset(&g_pBus->map.ioregs.timers.TAC, 0xF8, 1);
+    memset(&g_pBus->map.ioregs.intFlags, 0xE1, 1);
     // todo: audio
 }

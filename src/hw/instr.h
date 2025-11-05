@@ -15,11 +15,13 @@
 #include "cpu.h"
 #include <stdint.h>
 
+void log_instruction_fetch(uint8_t);
+
 /**
  * @brief set the cpu_t ptr used in instr.c
  *
  */
-void instrSetCpuPtr(cpu_t *);
+void instrSetCpuPtr(SCPURegisters_t *);
 
 /**
  * @brief load 8-bit register with immediate value

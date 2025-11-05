@@ -33,11 +33,11 @@ void initAudio()
 
     SDL_AudioSpec desired, obtained;
     desired.freq     = 44100;
-    desired.format   = AUDIO_U16SYS;
+    desired.format   = AUDIO_S16SYS;
     desired.channels = 1;
     desired.samples  = 2048;
     desired.callback = generateDownmixCallback;
-    desired.userdata = getAPUObject();
+    desired.userdata = nullptr;
 
     outputDev = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
 

@@ -42,6 +42,6 @@ typedef struct
 void buildTiles(uint32_t);
 
 void ppuInit(bool);
-bool ppuLoop(int);
+bool ppuTick(int);
 
 #endif //!_PPU_H_
