@@ -42,13 +42,15 @@ int main()
     // TODO:
     // handle OAM DMA cycle timing (160), currently not accurate
 
-    // runTests();
+    //runTests();
 
-    bool skipBootrom               = false;
-    bool previousInstructionSetIME = false;
+    bool skipBootrom               = true;
+    bool previousIME               = false;
     bool frameComplete             = false;
 
-    initializeBus(pLoadRom("Tetris.gb"), skipBootrom);
+    uint32_t cycleCounter          = 0;
+
+    initializeBus(pLoadRom("roms/Tetris.gb"), skipBootrom);
 
     pBus = pGetAddressBus();
     pCpu = pGetCPURegisters();
@@ -73,36 +75,35 @@ int main()
 
         // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
 
-        // this is done to delay executing interrupts by one cycle: EI sets IME after delay
-        if (pBus->bus[pCpu->reg16.pc] == 0xFB)
-        {
-            previousInstructionSetIME = true;
-        }
-
         if (!checkHalted() || !checkStopped())
         {
             //log_instruction_fetch(opcode);
             mCycles += executeInstruction(opcode);
+            if (opcode == 0xFB) { previousIME = true; }
         }
 
         if (!checkStopped())
         {
             // clock peripherals with T-cycles
-            handleTimers(mCycles);
+            handleTimers(mCycles * 4);
             frameComplete = ppuTick(mCycles * 4);
-            apuTick(mCycles); // but APU in M-cycles
+            apuTick(mCycles * 4);
         }
 
-        if (!previousInstructionSetIME)
+        if (!previousIME)
         {
             mCycles += handleInterrupts();
         }
 
-        previousInstructionSetIME = false;
+        if ((cycleCounter % (CYCLES_PER_FRAME / 4)) == 0)
+        {
+            joypadEventLoop();
+        }
+
+        previousIME = false;
 
         if (frameComplete)
         {
-            joypadEventLoop();
             frameComplete = false;
 
             uint64_t now                                     = SDL_GetPerformanceCounter();
@@ -117,4 +118,9 @@ int main()
             lastFrameTime = SDL_GetPerformanceCounter(); // Reset for next frame
         }
     }
+}
+
+static void oamDmaCallback(uint8_t data, uint16_t addr)
+{
+
 }

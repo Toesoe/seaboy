@@ -65,5 +65,7 @@ build/
 # roms
 *.gb
 testroms
+roms
 mts
 src/instructions
+tests

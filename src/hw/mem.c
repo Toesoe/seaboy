@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 
+//#define TEST
+
 #define DEBUG_WRITES
 #define BOOTROM_SIZE      (0x100)
 
@@ -62,6 +64,8 @@ SAddressBusState g_busState  = { 0 };
 static void handleIORegWrite8(uint8_t, uint16_t);
 static void handleIORegWrite16(uint16_t, uint16_t);
 
+static uint8_t handleIORegRead8(uint16_t);
+
 //=====================================================================================================================
 // Function definitions
 //=====================================================================================================================
@@ -100,7 +104,7 @@ void overrideBus(SAddressBus_t *pBus)
 
 const uint8_t fetch8(uint16_t addr)
 {
-    if (addr == 0xFF00) return 0xff;
+#ifndef TEST
     uint8_t ret = g_bus.bus[addr];
 
     if (addr <= ROM0_END)
@@ -111,18 +115,26 @@ const uint8_t fetch8(uint16_t addr)
     {
         ret = g_bus.map.pRom1[addr - ROMN_SIZE];
     }
-    else if (addr >= ERAM_START && addr <= ERAM_END)
+    else if ((addr >= ERAM_START) && (addr <= ERAM_END))
     {
         ret = (g_busState.pCurrentCartridge->cartramEnabled && g_bus.map.pEram != nullptr) ?
               g_bus.map.pEram[addr - ERAM_START] :
               0xFF;
     }
+    else if ((addr >= IO_REGISTER_START) && (addr <= IO_REGISTER_END))
+    {
+        ret = handleIORegRead8(addr);
+    }
 
     return ret;
+#else
+    return g_bus.bus[addr];
+#endif
 }
 
 const uint16_t fetch16(uint16_t addr)
 {
+#ifndef TEST
     const uint8_t *dataSrcPtr = g_bus.bus;
 
     if (addr <= ROM0_END)
@@ -141,6 +153,9 @@ const uint16_t fetch16(uint16_t addr)
     }
 
     return (uint16_t)((dataSrcPtr[addr + 1] << 8) | dataSrcPtr[addr]);
+#else
+    return (uint16_t)((g_bus.bus[addr + 1] << 8) | g_bus.bus[addr]);
+#endif
 }
 
 /**
@@ -151,19 +166,20 @@ const uint16_t fetch16(uint16_t addr)
  */
 void write8(uint8_t val, uint16_t addr)
 {
+#ifndef TEST
     // cart write
     if (addr < (ROMN_SIZE * 2))
     {
-        performBankSwitch(val, addr);
+        cartWriteHandler(val, addr);
     }
 
     // VRAM write
-    else if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
+    else if (addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
     {
-        if (g_bus.map.ioregs.lcd.stat.ppuMode == 3)
-        {
-            return;
-        }
+        // if (g_bus.map.ioregs.lcd.stat.ppuMode == 3)
+        // {
+        //     return;
+        // }
         g_bus.bus[addr] = val;
     }
 
@@ -184,6 +200,9 @@ void write8(uint8_t val, uint16_t addr)
     {
         g_bus.bus[addr] = val;
     }
+#else
+    g_bus.bus[addr] = val;
+#endif
 }
 
 /**
@@ -194,17 +213,19 @@ void write8(uint8_t val, uint16_t addr)
  */
 void write16(uint16_t val, uint16_t addr)
 {
+#ifndef TEST
     if (addr < (ROMN_SIZE * 2))
     {
         // we're writing to cart. handle bank switching stuff
-        performBankSwitch(val, addr);
+        cartWriteHandler(val, addr);
     }
-    else if (addr >= (ROMN_SIZE * 2) && addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
+    else if (addr < ((ROMN_SIZE * 2) + VRAM_SIZE))
     {
-        if (g_bus.map.ioregs.lcd.stat.ppuMode == 3)
-        {
-            return;
-        }
+        // no VRAM writing in mode 3
+        // if (g_bus.map.ioregs.lcd.stat.ppuMode == 3)
+        // {
+        //     return;
+        // }
         g_bus.bus[addr] = val;
     }
     else if ((addr >= ERAM_START) && (addr <= ERAM_END))
@@ -220,6 +241,10 @@ void write16(uint16_t val, uint16_t addr)
         g_bus.bus[addr]     = (uint8_t)(val & 0xFF);
         g_bus.bus[addr + 1] = (uint8_t)(val >> 8);
     }
+#else
+    g_bus.bus[addr]     = (uint8_t)(val & 0xFF);
+    g_bus.bus[addr + 1] = (uint8_t)(val >> 8);
+#endif
 }
 
 SAddressBus_t *const pGetAddressBus(void)
@@ -233,15 +258,14 @@ SAddressBus_t *const pGetAddressBus(void)
 
 static void handleIORegWrite8(uint8_t data, uint16_t addr)
 {
+    bool writeToBus = false;
+
     switch (addr)
     {
         case JOYPAD_INPUT_ADDR:
         {
-            // memset(&g_bus.map.ioregs.joypad, 0xFF, 1);
-            if (g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb != nullptr)
-            {
-                g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(data, addr);
-            }
+            // set joypad state from local registers
+            g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(data, addr);
             break;
         }
         case BOOT_ROM_MAPPER_CONTROL_ADDR:
@@ -252,6 +276,7 @@ static void handleIORegWrite8(uint8_t data, uint16_t addr)
         }
         case OAM_DMA_ADDR:
         {
+            writeToBus = true;
             memcpy(&g_bus.map.oam, &g_bus.bus[(uint16_t)(data << 8)], 0x9F);
             // costs 160 mcycles! handle in cb
             if (g_busState.cbRegister[OAM_DMA_CALLBACK].cb != nullptr)
@@ -297,44 +322,56 @@ static void handleIORegWrite8(uint8_t data, uint16_t addr)
             g_busState.cbRegister[AUDIO_CH4_CONTROL_CALLBACK].cb(data, addr);
             break;
         }
+        case DIVIDER_ADDR:
+        {
+            g_bus.map.ioregs.divRegister = 0; // writing any value here sets it to 0
+            break;
+        }
         case SERIAL_TRANSFER_ADDR:
         case TIMER_ADDR:
-        case DIVIDER_ADDR:
+        
         default:
         {
             break;
         }
     }
-    g_bus.bus[addr] = data;
+    if (writeToBus) { g_bus.bus[addr] = data; }
 }
 
 static void handleIORegWrite16(uint16_t data, uint16_t addr)
 {
+    bool writeToBus = true;
     switch (addr)
     {
-        case JOYPAD_INPUT_ADDR:
-        {
-            // memset(&g_bus.map.ioregs.joypad, 0xFF, 1);
-            if (g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb != nullptr)
-            {
-                g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(data, addr);
-            }
-            break;
-        }
-        case BOOT_ROM_MAPPER_CONTROL_ADDR:
-        {
-            g_bus.map.ioregs.disableBootrom = 0;
-            g_busState.bootromIsMapped      = false;
-            break;
-        }
-        case SERIAL_TRANSFER_ADDR:
-        case TIMER_ADDR:
-        case DIVIDER_ADDR:
         default:
         {
             break;
         }
     }
-    g_bus.bus[addr]     = (uint8_t)(data & 0xFF);
-    g_bus.bus[addr + 1] = (uint8_t)(data >> 8);
+
+    if (writeToBus)
+    {
+        g_bus.bus[addr]     = (uint8_t)(data & 0xFF);
+        g_bus.bus[addr + 1] = (uint8_t)(data >> 8);
+    }
+}
+
+
+static uint8_t handleIORegRead8(uint16_t addr)
+{
+    // switch (addr)
+    // {
+    //     case JOYPAD_INPUT_ADDR:
+    //     {
+    //         // set joypad state from local registers
+    //         g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(0, addr);
+    //         break;
+    //     }
+    //     default:
+    //     {
+    //         break;
+    //     }
+    // }
+
+    return g_bus.bus[addr];
 }

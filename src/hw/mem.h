@@ -30,8 +30,8 @@
 
 #define JOYPAD_INPUT_ADDR              (0xFF00)
 #define SERIAL_TRANSFER_ADDR           (0xFF01) // 2 bytes
-#define TIMER_ADDR                     (0xFF04) // 2 bytes
-#define DIVIDER_ADDR                   (0xFF06) // 2 bytes
+#define TIMER_ADDR                     (0xFF05) // 2 bytes
+#define DIVIDER_ADDR                   (0xFF04) // 2 bytes
 #define AUDIO_MASTER_CONTROL_ADDR      (0xFF26)
 #define AUDIO_CH1_VOLUME_ENVELOPE_ADDR (0xFF12)
 #define AUDIO_CH1_CONTROL_ADDR         (0xFF14)

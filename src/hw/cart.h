@@ -48,19 +48,21 @@ typedef struct
     bool           cartramEnabled;
     bool           advancedBankingModeEnabled;
 
+    size_t         numRomBanks;
     size_t         selectedRomBankNum;
     const uint8_t *pCurrentRomBank0; // pointer to start of currently selected ROM bank
     const uint8_t *pCurrentRomBank1;
 
     uint8_t       *pCartRam;
     size_t         cartRamSize;
+    size_t         numRamBanks;
     size_t         selectedRamBankNum;
     uint8_t       *pCurrentRamBank;
 } SCartridge_t;
 
 const SCartridge_t *pLoadRom(const char *);
 
-void                performBankSwitch(uint16_t, uint16_t);
+void                cartWriteHandler(uint16_t, uint16_t);
 
 void                writeCartRam8(uint8_t, uint16_t);
 void                writeCartRam16(uint16_t, uint16_t);

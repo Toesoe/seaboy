@@ -25,7 +25,18 @@
 #define ROM_SIZE_ADDRESS (0x148)
 #define RAM_SIZE_ADDRESS (0x149)
 
+#define MBC1_RAM_ENABLE_START (0x0000)
+#define MBC1_RAM_ENABLE_END   (0x1FFF)
+#define MBC1_ROM_BANK_NUM1_START (0x2000)
+#define MBC1_ROM_BANK_NUM1_END   (0x3FFF)
+#define MBC1_ROM_BANK_NUM2_START (0x4000)
+#define MBC1_ROM_BANK_NUM2_END   (0x5FFF)
+#define MBC1_BANKING_MODE_SELECT_START (0x6000)
+#define MBC1_BANKING_MODE_SELECT_END (0x7FFF)
+
 SCartridge_t g_cartridge = {0};
+
+static void handleMBC1(uint16_t, uint16_t);
 
 /**
  * map a romfile into memory
@@ -193,91 +204,59 @@ const SCartridge_t *pLoadRom(const char *filename)
 
     // determine ROM size
     g_cartridge.romSize = 32768 * (1 << g_cartridge.pRom[ROM_SIZE_ADDRESS]);
+    g_cartridge.numRomBanks = (g_cartridge.romSize / ROMN_SIZE);
 
-    // determine cartram size
-    switch (g_cartridge.pRom[RAM_SIZE_ADDRESS])
+    if (g_cartridge.mapperHasRam)
     {
-        case 0x02:
+        // determine cartram size
+        switch (g_cartridge.pRom[RAM_SIZE_ADDRESS])
         {
-            g_cartridge.cartRamSize = 8192;
-            g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
-            break;
+            case 0x02:
+            {
+                g_cartridge.cartRamSize = 8192;
+                g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
+                break;
+            }
+            case 0x03:
+            {
+                g_cartridge.cartRamSize = 32768;
+                g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
+                break;
+            }
+            case 0x04:
+            {
+                g_cartridge.cartRamSize = 131072;
+                g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
+                break;
+            }
+            case 0x05:
+            {
+                g_cartridge.cartRamSize = 65536;
+                g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
+                break;
+            }
+            default: break;
         }
-        case 0x03:
-        {
-            g_cartridge.cartRamSize = 32768;
-            g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
-            break;
-        }
-        case 0x04:
-        {
-            g_cartridge.cartRamSize = 131072;
-            g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
-            break;
-        }
-        case 0x05:
-        {
-            g_cartridge.cartRamSize = 65536;
-            g_cartridge.pCartRam = calloc(g_cartridge.cartRamSize, sizeof(uint8_t));
-            break;
-        }
-        default: break;
+
+        g_cartridge.numRamBanks = (g_cartridge.cartRamSize / ERAM_SIZE);
     }
 
     return &g_cartridge;
 }
 
-void performBankSwitch(uint16_t val, uint16_t addr)
+void cartWriteHandler(uint16_t val, uint16_t addr)
 {
-    if ((addr > 0x0000) && (addr < 0x2000))
-    {
-        // RAM enable
-        if ((val & 0xF) == 0xA)
-        {
-            printf("enabling cartram\n");
-            g_cartridge.cartramEnabled = true;
-        }
-        else
-        {
-            printf("disabling cartram\n");
-            g_cartridge.cartramEnabled = false;
-        }
-    }
-    else if ((addr >= 0x2000) && (addr < ROMN_SIZE))
-    {
-        // MBC1: set low bank, all others: set high bank
+    if (g_cartridge.mapperType == MAPPER_NONE) return;
 
-        // if (MBC1) {}
-        // switch bank. 0x1 -> 0x1F
-        val &= 0x1F;
-        printf("switching rombank to %d\n", val);
-        g_cartridge.selectedRomBankNum = val;
-        g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[val * ROMN_SIZE]);
-    }
-    else if ((addr >= ROMN_SIZE) && (addr < 0x6000))
+    switch (g_cartridge.mapperType)
     {
-        if (g_cartridge.mapperHasRam && g_cartridge.pCartRam)
+        case MBC1:
         {
-            size_t bankCount = g_cartridge.cartRamSize / ERAM_SIZE;
-            val %= bankCount;
-            g_cartridge.selectedRamBankNum = val;
-            g_cartridge.pCurrentRamBank = &(g_cartridge.pCartRam[val * ERAM_SIZE]);
+            handleMBC1(val, addr);
+            break;
         }
-    }
-    else if ((addr >= 0x6000) && (addr <= 0x8000))
-    {
-        // banking mode select
-        if (val & 0x01)
-        {
-            // advanced banking
-            printf("enabling advanced banking mode");
-            g_cartridge.advancedBankingModeEnabled = true;
-        }
-        else
-        {
-            printf("disabling advanced banking mode");
-            g_cartridge.advancedBankingModeEnabled = false;
-        }
+        default:
+            break;
     }
 }
 
@@ -309,4 +288,68 @@ uint16_t readCartRam16(uint16_t addr)
 {
     if (!g_cartridge.cartramEnabled || ((addr - ERAM_START) > g_cartridge.cartRamSize)) return 0xFFFF;
     return *(uint16_t *)(g_cartridge.pCurrentRamBank + (addr - ERAM_START));
+}
+
+static void handleMBC1(uint16_t val, uint16_t addr)
+{
+    if (addr < MBC1_RAM_ENABLE_END)
+    {
+        // RAM enable
+        if ((val & 0xF) == 0xA)
+        {
+            printf("enabling cartram\n");
+            g_cartridge.cartramEnabled = true;
+        }
+        else
+        {
+            printf("disabling cartram\n");
+            g_cartridge.cartramEnabled = false;
+        }
+    }
+    else if (addr < MBC1_ROM_BANK_NUM1_END)
+    {
+        // MBC1: set low bank. 5-bit register so 0x4000-0x7FFF
+        val &= 0x1F;
+
+        // when set to 0, it behaves as if set to 1
+        if (val == 0) { val = 1; }
+
+        g_cartridge.selectedRomBankNum = val;
+        printf("selecting rombank %d\n", val);
+        g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE]);
+    }
+    else if (addr < MBC1_ROM_BANK_NUM2_END)
+    {
+        // 2-bit reg
+        val &= 0x03;
+
+        // rambank no, or upper bits of rombank no
+        if (g_cartridge.mapperHasRam && g_cartridge.pCartRam)
+        {
+            printf("selecting rambank %d\n", val);
+            g_cartridge.selectedRamBankNum = val;
+            g_cartridge.pCurrentRamBank = &(g_cartridge.pCartRam[val * ERAM_SIZE]);
+        }
+        else if (g_cartridge.advancedBankingModeEnabled)
+        {
+            g_cartridge.selectedRomBankNum &= (val << 4);
+            printf("advanced rombank select %d\n", g_cartridge.selectedRomBankNum);
+            g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE]);
+        }
+    }
+    else if (addr < MBC1_BANKING_MODE_SELECT_END)
+    {
+        // banking mode select
+        if (val & 0x01)
+        {
+            // advanced banking
+            printf("enabling advanced banking mode\n");
+            g_cartridge.advancedBankingModeEnabled = true;
+        }
+        else
+        {
+            printf("disabling advanced banking mode\n");
+            g_cartridge.advancedBankingModeEnabled = false;
+        }
+    }
 }

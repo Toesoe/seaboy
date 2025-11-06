@@ -114,13 +114,13 @@ void joypadShiftValuesToReg(uint8_t regValue, uint16_t addr)
 
     SAddressBus_t *pBus = pGetAddressBus();
 
-    if (regValue == 0x30) { memset(&pBus->map.ioregs.joypad, 0xFF, sizeof(sRegJOYP_t)); }
-    else if (regValue & 0x10)
+    if (regValue & 0x10)
     {
-        pBus->map.ioregs.joypad.aRight = g_select.aRight;
-        pBus->map.ioregs.joypad.bLeft = g_select.bLeft;
-        pBus->map.ioregs.joypad.selectUp = g_select.selectUp;
-        pBus->map.ioregs.joypad.startDown = g_select.startDown;
+        pBus->map.ioregs.joypad.aRight = g_joypad.aRight;
+        pBus->map.ioregs.joypad.bLeft = g_joypad.bLeft;
+        pBus->map.ioregs.joypad.selectUp = g_joypad.selectUp;
+        pBus->map.ioregs.joypad.startDown = g_joypad.startDown;
+        pBus->map.ioregs.joypad.dpadSelect = 1;
     }
     else if (regValue & 0x20)
     {
@@ -128,5 +128,15 @@ void joypadShiftValuesToReg(uint8_t regValue, uint16_t addr)
         pBus->map.ioregs.joypad.bLeft = g_select.bLeft;
         pBus->map.ioregs.joypad.selectUp = g_select.selectUp;
         pBus->map.ioregs.joypad.startDown = g_select.startDown;
+        pBus->map.ioregs.joypad.buttonSelect = 1;
+    }
+    else if (regValue & 0x30)
+    {
+        pBus->map.ioregs.joypad.aRight = 1;
+        pBus->map.ioregs.joypad.bLeft = 1;
+        pBus->map.ioregs.joypad.selectUp = 1;
+        pBus->map.ioregs.joypad.startDown = 1;
+        pBus->map.ioregs.joypad.dpadSelect = 1;
+        pBus->map.ioregs.joypad.buttonSelect = 1;
     }
 }

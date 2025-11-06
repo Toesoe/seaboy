@@ -15,9 +15,9 @@ static void set_state(cJSON *, SCPURegisters_t *, SAddressBus_t *);
 
 void runTests(void)
 {
-    initializeBus(nullptr, false);
+    initializeBus("roms/Tetris.gb", false);
 
-    DIR *pTestDir = opendir("./src/instructions");
+    DIR *pTestDir = opendir("./tests");
 
     if (pTestDir == NULL)
     {
@@ -41,10 +41,10 @@ void runTests(void)
     {
         bool passedBus = true;
 
-        bool checkBus = false;
+        bool checkBus = true;
 
         if (pEntry->d_name[0] == '.') continue;
-        char fullpath[256] = "./src/instructions/";
+        char fullpath[256] = "./tests/";
         strncat(fullpath, pEntry->d_name, 10);
         //printf("name %s\n", fullpath);
         FILE *pFile = fopen(fullpath, "r");
@@ -91,7 +91,7 @@ void runTests(void)
 
                     if (!memcmp(&cpu, &finalCpu, sizeof(SCPURegisters_t)))
                     {
-                        printf("cpu mismatch in instr file %s, name %d\n", fullpath, posCounter);
+                        printf("cpu mismatch in instr file %s, name %s\n", fullpath, cJSON_GetObjectItemCaseSensitive(json_item, "name")->valuestring);
                     }
 
                     if (checkBus && passedBus)
