@@ -50,7 +50,7 @@ int main()
 
     uint32_t cycleCounter          = 0;
 
-    initializeBus(pLoadRom("roms/Tetris.gb"), skipBootrom);
+    initializeBus(pLoadRom("roms/04-op r,imm.gb"), skipBootrom);
 
     pBus = pGetAddressBus();
     pCpu = pGetCPURegisters();
@@ -68,12 +68,18 @@ int main()
     uint64_t lastFrameTime = SDL_GetPerformanceCounter();
     double   freq          = (double)SDL_GetPerformanceFrequency();
 
+    FILE *f = fopen("gb.log", "w");
+
     while (true)
     {
         int     mCycles = 0;
         uint8_t opcode  = fetch8(pCpu->reg16.pc);
 
         // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
+
+        fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
+                pCpu->reg8.a, pCpu->reg8.f, pCpu->reg8.b, pCpu->reg8.c, pCpu->reg8.d, pCpu->reg8.e, pCpu->reg8.h, pCpu->reg8.l,
+                pCpu->reg16.sp, pCpu->reg16.pc, fetch8(pCpu->reg16.pc), fetch8(pCpu->reg16.pc+1), fetch8(pCpu->reg16.pc+2), fetch8(pCpu->reg16.pc+3));
 
         if (!checkHalted() || !checkStopped())
         {

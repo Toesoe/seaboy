@@ -798,13 +798,15 @@ int executeInstruction(uint8_t instr)
         }
         case 0x2A: // LD A,(HL+)
         {
-            ld_reg8_addr(A, g_cpu.registers.reg16.hl++);
+            ld_reg8_addr(A, g_cpu.registers.reg16.hl);
+            g_cpu.registers.reg16.hl++;
             cycleCount = 2;
             break;
         }
         case 0x3A: // LD A,(HL-)
         {
-            ld_reg8_addr(A, g_cpu.registers.reg16.hl--);
+            ld_reg8_addr(A, g_cpu.registers.reg16.hl);
+            g_cpu.registers.reg16.hl--;
             cycleCount = 2;
             break;
         }
@@ -1533,10 +1535,9 @@ int executeInstruction(uint8_t instr)
                     {
                         hl = true;
                     }
-                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    else
                     {
-                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) :
-                                             getRegisterIndexByOpcodeNibble(lo - 0x07);
+                        regR = getRegisterIndexByOpcodeNibble(lo);
                     }
 
                     if (!hl)
@@ -1555,14 +1556,13 @@ int executeInstruction(uint8_t instr)
                 {
                     regL = (lo <= 0x07) ? D : E;
 
-                    if (lo == 0x06 || lo == 0x0E)
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
                     {
                         hl = true;
                     }
-                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    else
                     {
-                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) :
-                                             getRegisterIndexByOpcodeNibble(lo - 0x07);
+                        regR = getRegisterIndexByOpcodeNibble(lo);
                     }
 
                     if (!hl)
@@ -1581,14 +1581,13 @@ int executeInstruction(uint8_t instr)
                 {
                     regL = (lo <= 0x07) ? H : L;
 
-                    if (lo == 0x06 || lo == 0x0E)
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
                     {
                         hl = true;
                     }
-                    else if ((lo & 0x07) == 0) // lower 3 bits not set? not A
+                    else
                     {
-                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) :
-                                             getRegisterIndexByOpcodeNibble(lo - 0x07);
+                        regR = getRegisterIndexByOpcodeNibble(lo);
                     }
 
                     if (!hl)
@@ -1607,31 +1606,29 @@ int executeInstruction(uint8_t instr)
                 {
                     if (lo <= 0x07) // (HL). no need to worry about HALT, already handled above
                     {
-                        hlLeft = true;
+                        cycleCount       = 2;
+                        if (lo != 0x07) { regR = getRegisterIndexByOpcodeNibble(lo); }
+                        ld_addr_reg8(g_cpu.registers.reg16.hl, regR);
+                        break;
                     }
-                    else if (lo == 0xE) // LD A, (HL)
+
+                    if (lo == 0x0E)
                     {
                         hl = true;
                     }
-                    else if (lo != 0xF) // 0xF == LD A, A
+                    else
                     {
-                        regR = (lo < 0x06) ? getRegisterIndexByOpcodeNibble(lo) :
-                                             getRegisterIndexByOpcodeNibble(lo - 0x08);
+                        regR = getRegisterIndexByOpcodeNibble(lo);
                     }
 
-                    if (hlLeft)
+                    if (!hl)
                     {
-                        cycleCount       = 2;
-                        ld_addr_reg8(g_cpu.registers.reg16.hl, regR);
-                    }
-                    else if (hl)
-                    {
-                        cycleCount       = 2;
-                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
+                        ld_reg8_reg8(regL, regR);
                     }
                     else
                     {
-                        ld_reg8_reg8(regL, regR);
+                        cycleCount       = 2;
+                        ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
                     break;
@@ -1930,20 +1927,28 @@ static int getRegisterIndexByOpcodeNibble(uint8_t lo)
     switch (lo)
     {
         case 0x0:
+        case 0x8:
             return 3; // B
         case 0x1:
+        case 0x9:
             return 2; // C
         case 0x2:
+        case 0xA:
             return 5; // D
         case 0x3:
+        case 0xB:
             return 4; // E
         case 0x4:
+        case 0xC:
             return 7; // H
         case 0x5:
+        case 0xD:
             return 6; // L
-        // Add other cases if needed
+        case 0x7:
+        case 0xF:
+            return 1; // A
         default:
-            return -1; // Invalid register
+            return -1;
     }
 }
 

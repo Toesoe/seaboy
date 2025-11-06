@@ -24,6 +24,7 @@
 #include <string.h>
 
 //#define TEST
+#define GB_DOCTOR
 
 #define DEBUG_WRITES
 #define BOOTROM_SIZE      (0x100)
@@ -104,8 +105,13 @@ void overrideBus(SAddressBus_t *pBus)
 
 const uint8_t fetch8(uint16_t addr)
 {
+
 #ifndef TEST
     uint8_t ret = g_bus.bus[addr];
+
+#ifdef GB_DOCTOR
+    if (addr == 0xFF44) { return 0x90; } // hardcode LY
+#endif
 
     if (addr <= ROM0_END)
     {
@@ -121,7 +127,7 @@ const uint8_t fetch8(uint16_t addr)
               g_bus.map.pEram[addr - ERAM_START] :
               0xFF;
     }
-    else if ((addr >= IO_REGISTER_START) && (addr <= IO_REGISTER_END))
+    else if ((addr >= IO_REGISTER_START) && (addr < IO_REGISTER_END))
     {
         ret = handleIORegRead8(addr);
     }
@@ -198,6 +204,13 @@ void write8(uint8_t val, uint16_t addr)
     // regular bus write
     else
     {
+        if (addr == 0xFF82)
+        {
+            if (val == 0xC0)
+            {
+                __asm("nop");
+            }
+        }
         g_bus.bus[addr] = val;
     }
 #else
