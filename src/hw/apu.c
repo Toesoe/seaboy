@@ -46,7 +46,7 @@
 #define WAVE_TIMER_PERIOD(freq)  (((2048 - (freq)) * 2))
 
 #define SDL_SAMPLE_RATE          44100
-#define APU_CLOCK                (CPU_CLOCK_SPEED_HZ)
+#define APU_CLOCK                (CPU_CLOCK_SPEED_HZ / 4)
 
 #define SAMPLE_BUFFER_SIZE       2048
 
@@ -84,7 +84,7 @@ typedef struct
 {
     bool                              active;
 
-    uint8_t                           volume;
+    uint8_t                           volumeShift;
     uint32_t                          sampleIndex;
     int32_t                           samplePeriod;
     int32_t                           lengthCounter;
@@ -107,6 +107,8 @@ typedef struct
     bool                                       envelopeActive;
     int32_t                                    envelopePeriod;
     int32_t                                    lengthCounter;
+
+    int16_t                                    lfsr;
 
     SAudio_NoiseChannel_LengthTimer_t         *pNR41;
     SAudio_VolumeEnvelope_t                   *pNR42;
@@ -198,7 +200,7 @@ void debugPulseChannelTrigger(void)
     printf("Before APU tick:\n");
     printf("  lengthCounter = %d\n", ch->lengthCounter);
     printf("  envelope volume = %d\n", ch->volume);
-    printf("  envelope samplePeriod = %d\n", ch->envelopePeriod);
+    printf("  envelope period = %d\n", ch->envelopePeriod);
     printf("  dutyStep = %d\n", ch->waveformIndex);
     printf("  enabled = %d\n", g_currentAPUState.audioControl.pNR52->ch1Enable);
 
@@ -318,11 +320,15 @@ void apuTick(size_t apuCycles)
     {
         tickPulseChannel(2, apuCycles);
     }
+    if (g_currentAPUState.ch3.active && (g_currentAPUState.ch3.lengthCounter > 0))
+    {
+        tickWaveChannel(apuCycles);
+    }
+    if (g_currentAPUState.ch4.active && (g_currentAPUState.ch4.lengthCounter > 0))
+    {
+        tickNoiseChannel(apuCycles);
+    }
 
-    // if (*(uint8_t *)g_currentAPUState.ch3.pNR30)
-    // {
-    //     tickWaveChannel(apuCycles);
-    // }
     updateSampleBuffer(apuCycles);
 
     if (totalCycles >= 8192)
@@ -422,22 +428,22 @@ static void tickWaveChannel(size_t cycles)
     {
         case 0:
         {
-            g_currentAPUState.ch3.volume = 0;
+            g_currentAPUState.ch3.volumeShift = 0xF;
             break;
         }
         case 1:
         {
-            g_currentAPUState.ch3.volume = 0xF;
+            g_currentAPUState.ch3.volumeShift = 0;
             break;
         }
         case 2:
         {
-            g_currentAPUState.ch3.volume = 0x8;
+            g_currentAPUState.ch3.volumeShift = 1;
             break;
         }
         case 3:
         {
-            g_currentAPUState.ch3.volume = 0x4;
+            g_currentAPUState.ch3.volumeShift = 2;
             break;
         }
     }
@@ -452,31 +458,11 @@ static void tickWaveChannel(size_t cycles)
 
     g_currentAPUState.ch3.lengthCounter = 256 - *g_currentAPUState.ch3.pNR31;
 
-    // while (g_currentAPUState.ch3.samplePeriod  <= 0)
-    // {
-    //     // g_currentAPUState.ch3->currentPeriod += PULSE_TIMER_PERIOD(getChannelFreqValue(pulse));
-
-    //     g_currentAPUState.ch3->waveformIndex = (g_currentAPUState.ch3->waveformIndex + 1) & 0x07;
-    // }
-
-    // pulse->sample = sc_dutyWaveforms[pulse->pNRx1->waveDuty][pulse->waveformIndex] ? 1 : 0;
-
-    // if (g_currentAPUState.ch3->pNRx4->trigger)
-    // {
-    //     if (g_currentAPUState.audioControl.pNR52->ch3Enable == 0)
-    //     {
-    //         g_currentAPUState.audioControl.pNR52->ch3Enable = 1;
-    //     }
-    //     if (g_currentAPUState.ch3->currentLengthCounter == 0)
-    //     {
-    //         g_currentAPUState.ch3->currentLengthCounter = 256 - *g_currentAPUState.ch3->pNRx1;
-    //     }
-    // }
-
-    // if (*(*(SWaveAudioChannel_t *)&g_currentAPUState.ch3).pNRx1 != *g_currentAPUState.ch3->pNRx1)
-    // {
-    //     g_currentAPUState.ch3->currentLengthCounter = 256 - *g_currentAPUState.ch3->pNRx1;
-    // }
+    if (*(uint8_t *)g_currentAPUState.ch3.pNR31 != g_currentAPUState.ch3.prevNR31)
+    {
+        g_currentAPUState.ch3.lengthCounter = 256 - *(uint8_t *)g_currentAPUState.ch3.pNR31;
+        memcpy(&g_currentAPUState.ch3.prevNR31, g_currentAPUState.ch3.pNR31, sizeof(uint8_t));
+    }
 }
 
 static void triggerWaveChannel(void)
@@ -675,11 +661,15 @@ void updateSampleBuffer(size_t cycles)
                 -(int16_t)g_currentAPUState.ch2.volume;
                 mix += s * 200;
             }
-            // if (g_currentAPUState.audioControl.pNR52->ch3Enable)
-            // {
-            //     mix += *(uint8_t *)&g_pBus->map.ioregs.wavepattern[g_currentAPUState.ch3.sampleIndex / 2] &
-            //            (0xF << g_currentAPUState.ch3.sampleIndex % 2);
-            // }
+            if (g_currentAPUState.ch3.active)
+            {
+                mix += (*(uint8_t *)&g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2] &
+                       (0xF << g_currentAPUState.ch3.sampleIndex % 2)) >> g_currentAPUState.ch3.volumeShift;
+            }
+            if (g_currentAPUState.ch4.active)
+            {
+
+            }
         }
 
         if ((sampleWriteIndex - sampleReadIndex) < SAMPLE_BUFFER_SIZE)
@@ -727,7 +717,7 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
                 g_currentAPUState.ch3.active        = false;
                 g_currentAPUState.ch3.sampleIndex   = 0;
                 g_currentAPUState.ch3.lengthCounter = 0;
-                g_currentAPUState.ch3.volume        = 0;
+                g_currentAPUState.ch3.volumeShift   = 0;
             }
             if ((g_previousAPUState.audioControl.pNR52->ch4Enable !=
                  g_currentAPUState.audioControl.pNR52->ch4Enable) &&
@@ -743,7 +733,7 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
         case AUDIO_CH1_CONTROL_ADDR:
         {
             g_currentAPUState.ch1.pNRx4->lengthEnable = (data >> 6) & 1;
-            *(uint8_t *)g_currentAPUState.ch1.pNRx4   = data & 0x78; // store value without trigger bit & samplePeriod
+            *(uint8_t *)g_currentAPUState.ch1.pNRx4   = data & 0x7F; // store value without trigger bit
             if (isTrigger)
             {
                 triggerPulseChannel(1);
