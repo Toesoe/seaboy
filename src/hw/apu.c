@@ -11,9 +11,9 @@
  *        sqwaves are rudimentary waveform generators clocked by frequency timers
  *
  * @note  https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware:
- *        If a timer's rate is given as a frequency, its period is 4194304/frequency in Hz
+ *        If a timer's rate is given as a frequency, its samplePeriod is 4194304/frequency in Hz
  *        Each timer has an internal counter that is decremented on each input clock
- *        When the counter becomes zero, it is reloaded with the period and an output clock is generated.
+ *        When the counter becomes zero, it is reloaded with the samplePeriod and an output clock is generated.
  *
  */
 
@@ -23,6 +23,8 @@
 
 #include "apu.h"
 #include "mem.h"
+#include "cpu.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -32,7 +34,7 @@
 // Defines
 //=====================================================================================================================
 
-#define WAVEFORM_GENERATOR_TIMER 4194304
+#define WAVEFORM_GENERATOR_TIMER CPU_CLOCK_SPEED_HZ
 #define MAX_WAVEFORM_INDEX       7
 
 #define NUM_APU_CHANNELS         (4)
@@ -44,7 +46,7 @@
 #define WAVE_TIMER_PERIOD(freq)  (((2048 - (freq)) * 2))
 
 #define SDL_SAMPLE_RATE          44100
-#define APU_CLOCK                1048576
+#define APU_CLOCK                (CPU_CLOCK_SPEED_HZ / 4)
 
 #define SAMPLE_BUFFER_SIZE       2048
 
@@ -62,7 +64,7 @@ typedef struct
     bool                        envelopeActive;
     uint32_t                    waveformIndex;
     int32_t                     envelopePeriod;
-    int32_t                     period;
+    int32_t                     samplePeriod;
     int32_t                     lengthCounter;
 
     bool                        sweepEnabled;
@@ -84,7 +86,7 @@ typedef struct
 
     uint8_t                           volume;
     uint32_t                          sampleIndex;
-    int32_t                           period;
+    int32_t                           samplePeriod;
     int32_t                           lengthCounter;
     uint8_t                          *pCurrentWaveTableEntry;
 
@@ -196,7 +198,7 @@ void debugPulseChannelTrigger(void)
     printf("Before APU tick:\n");
     printf("  lengthCounter = %d\n", ch->lengthCounter);
     printf("  envelope volume = %d\n", ch->volume);
-    printf("  envelope period = %d\n", ch->envelopePeriod);
+    printf("  envelope samplePeriod = %d\n", ch->envelopePeriod);
     printf("  dutyStep = %d\n", ch->waveformIndex);
     printf("  enabled = %d\n", g_currentAPUState.audioControl.pNR52->ch1Enable);
 
@@ -225,12 +227,12 @@ void apuInit(SAddressBus_t *pBus)
     g_currentAPUState.ch1.waveformIndex          = 0;
     g_currentAPUState.ch1.envelopeActive         = false;
     g_currentAPUState.ch1.envelopePeriod         = 7;
-    g_currentAPUState.ch1.period                 = 4 * 2048;
+    g_currentAPUState.ch1.samplePeriod                 = 4 * 2048;
     g_currentAPUState.ch1.lengthCounter          = 0;
     g_currentAPUState.ch1.volume                 = 0;
 
     g_currentAPUState.ch1.sweepEnabled           = false;
-    g_currentAPUState.ch1.sweepShadowRegister    = g_currentAPUState.ch1.period;
+    g_currentAPUState.ch1.sweepShadowRegister    = g_currentAPUState.ch1.samplePeriod;
     g_currentAPUState.ch1.sweepTimer             = 0;
 
     g_currentAPUState.ch2.pNRx0                  = nullptr; // does not exist for channel 2
@@ -242,7 +244,7 @@ void apuInit(SAddressBus_t *pBus)
     g_currentAPUState.ch2.waveformIndex          = 0;
     g_currentAPUState.ch2.envelopeActive         = false;
     g_currentAPUState.ch2.envelopePeriod         = 7;
-    g_currentAPUState.ch2.period                 = 4 * 2048;
+    g_currentAPUState.ch2.samplePeriod                 = 4 * 2048;
     g_currentAPUState.ch2.lengthCounter          = 0;
     g_currentAPUState.ch2.volume                 = 0;
 
@@ -254,7 +256,7 @@ void apuInit(SAddressBus_t *pBus)
 
     g_currentAPUState.ch3.pCurrentWaveTableEntry = &pBus->map.ioregs.wavetable[0];
     g_currentAPUState.ch3.sampleIndex            = 1; // always start at 1, high nibble of 0
-    g_currentAPUState.ch3.period                 = 4 * 2048;
+    g_currentAPUState.ch3.samplePeriod                 = 4 * 2048;
     g_currentAPUState.ch3.lengthCounter          = 256 - pBus->map.ioregs.audio.ch3LengthTimer;
 
     g_currentAPUState.ch4.pNR41                  = &pBus->map.ioregs.audio.ch4LengthTimer;
@@ -360,12 +362,12 @@ static void tickPulseChannel(size_t num, size_t cycles)
 {
     SPulseAudioChannel_t *pulse = (num == 1 ? &g_currentAPUState.ch1 : &g_currentAPUState.ch2);
 
-    pulse->period -= cycles;
+    pulse->samplePeriod -= cycles;
 
-    // if period goes below 0, we have to step the waveform
-    while (pulse->period <= 0)
+    // if samplePeriod goes below 0, we have to step the waveform
+    while (pulse->samplePeriod <= 0)
     {
-        pulse->period += PULSE_TIMER_PERIOD(getPulseFreqValue(pulse));
+        pulse->samplePeriod += PULSE_TIMER_PERIOD(getPulseFreqValue(pulse));
         pulse->waveformIndex = (pulse->waveformIndex + 1) & 0x07;
     }
 
@@ -388,7 +390,7 @@ static void triggerPulseChannel(size_t num)
     pulse->lengthCounter = 64 - pulse->pNRx1->initialLength;
 
     pulse->waveformIndex = 0;
-    pulse->period        = PULSE_TIMER_PERIOD(getPulseFreqValue(pulse));
+    pulse->samplePeriod        = PULSE_TIMER_PERIOD(getPulseFreqValue(pulse));
 
     if (num == 1)
     {
@@ -439,17 +441,17 @@ static void tickWaveChannel(size_t cycles)
         }
     }
 
-    g_currentAPUState.ch3.period -= cycles;
+    g_currentAPUState.ch3.samplePeriod -= cycles;
 
-    while (g_currentAPUState.ch3.period <= 0)
+    while (g_currentAPUState.ch3.samplePeriod <= 0)
     {
-        g_currentAPUState.ch3.period += WAVE_TIMER_PERIOD(getWaveFreqValue());
+        g_currentAPUState.ch3.samplePeriod += WAVE_TIMER_PERIOD(getWaveFreqValue());
         g_currentAPUState.ch3.sampleIndex = (g_currentAPUState.ch3.sampleIndex + 1) & 0x07;
     }
 
     g_currentAPUState.ch3.lengthCounter = 256 - *g_currentAPUState.ch3.pNR31;
 
-    // while (g_currentAPUState.ch3.period  <= 0)
+    // while (g_currentAPUState.ch3.samplePeriod  <= 0)
     // {
     //     // g_currentAPUState.ch3->currentPeriod += PULSE_TIMER_PERIOD(getChannelFreqValue(pulse));
 
@@ -486,7 +488,7 @@ static void triggerWaveChannel(void)
     }
 
     g_currentAPUState.ch3.sampleIndex = 0;
-    g_currentAPUState.ch3.period      = WAVE_TIMER_PERIOD(getWaveFreqValue());
+    g_currentAPUState.ch3.samplePeriod      = WAVE_TIMER_PERIOD(getWaveFreqValue());
 }
 
 static void tickNoiseChannel(size_t cycles)
@@ -551,7 +553,7 @@ static void clockLengthCounters(void)
 static void clockVolumeEnvelope(bool *pEnvelopeActive, int32_t *pEnvelopePeriod, uint8_t *pVolume,
                                 SAudio_VolumeEnvelope_t *pEnvelopeRegister)
 {
-    // if a clock is generated and envelope period is not 0, calculate new volume
+    // if a clock is generated and envelope samplePeriod is not 0, calculate new volume
     if (*pEnvelopeActive) // && pCH1->pNRx2->envelopePeriod > 0)
     {
         if (--(*pEnvelopePeriod) == 0)
@@ -755,7 +757,7 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
         case AUDIO_CH1_CONTROL_ADDR:
         {
             g_currentAPUState.ch1.pNRx4->lengthEnable = (data >> 6) & 1;
-            *(uint8_t *)g_currentAPUState.ch1.pNRx4   = data & 0x7F; // store value without trigger bit
+            *(uint8_t *)g_currentAPUState.ch1.pNRx4   = data & 0x78; // store value without trigger bit & samplePeriod
             if (isTrigger)
             {
                 triggerPulseChannel(1);

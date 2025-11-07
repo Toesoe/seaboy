@@ -24,6 +24,7 @@ set(CMAKE_GENERATOR "Ninja")
 add_compile_definitions(
     $<$<CONFIG:Debug>:DEBUG>
     CMAKE_EXPORT_COMPILE_COMMANDS=1
+    #GB_DOCTOR
 )
 
 add_subdirectory(src)

@@ -15,6 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define CPU_CLOCK_SPEED_HZ (4194304)
+
 typedef enum _Flag
 {
     FLAG_C = 4, // carry

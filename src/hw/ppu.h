@@ -17,6 +17,8 @@
 #include <stdlib.h>
 
 #define PPU_FIFO_SIZE       8
+#define CYCLES_PER_FRAME    70224     // 154 scanlines * 456 cycles
+#define FRAME_DURATION_NS   16666667L
 
 typedef enum
 {

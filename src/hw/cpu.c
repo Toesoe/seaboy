@@ -12,6 +12,7 @@
 #include "cpu.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,12 +21,16 @@
 #include "instr.h"
 #include "mem.h"
 
+#define DIV_REGISTER_UPDATE_RATE_HZ  (16384)
+#define DIV_REGISTER_TICK_INTERVAL   (CPU_CLOCK_SPEED_HZ / DIV_REGISTER_UPDATE_RATE_HZ)
+
 typedef struct
 {
     SCPURegisters_t registers;
     bool interruptMasterEnable;
     bool isHalted;  // HALT
     bool isStopped; // STOP
+    uint16_t divCounter;
 } SCPU_t;
 
 static SCPU_t g_cpu;
@@ -35,6 +40,8 @@ static bool   haltOnUnknown = false;
 
 static int    getRegisterIndexByOpcodeNibble(uint8_t);
 static void   cpuSkipBootrom(void);
+static void   bootromUnmapCallback(uint8_t, uint16_t);
+static void   divWriteCallback(uint8_t, uint16_t);
 
 /**
  * @brief reset g_cpu.registers to initial state
@@ -46,14 +53,13 @@ void resetCpu(bool skipBootrom)
     instrSetCpuPtr(&g_cpu.registers);
     g_pBus = pGetAddressBus();
 
-    if (!skipBootrom)
-    {
-        g_cpu.registers.reg16.pc = 0x0;
-    }
-    else
+    if (skipBootrom)
     {
         cpuSkipBootrom();
     }
+
+    registerAddressCallback(BOOT_ROM_MAPPER_CONTROL_ADDR, BOOTROM_UNMAP_CALLBACK, bootromUnmapCallback);
+    registerAddressCallback(DIVIDER_ADDR, DIV_CALLBACK, divWriteCallback);
 }
 
 /**
@@ -715,6 +721,8 @@ int executeInstruction(uint8_t instr)
 {
     size_t  incrementProgramCounterBy = 1; // default value
     int     cycleCount                = 1;
+    static bool   delayIMEUpdate      = false;
+    static size_t updateIMEAfterCycles  = 1;
 
     uint8_t hi                        = instr >> 4;
     uint8_t lo                        = instr & 15;
@@ -1254,9 +1262,9 @@ int executeInstruction(uint8_t instr)
         }
         case 0xD9: // RETI
         {
+            g_cpu.interruptMasterEnable = true;
             ret();
             incrementProgramCounterBy   = 0;
-            g_cpu.interruptMasterEnable = true;
             cycleCount                  = 4;
             break;
         }
@@ -1330,7 +1338,6 @@ int executeInstruction(uint8_t instr)
             cycleCount                  = 1;
             incrementProgramCounterBy   = 1;
             g_cpu.isHalted              = true;
-            g_cpu.interruptMasterEnable = false;
             break;
         }
 
@@ -1386,7 +1393,7 @@ int executeInstruction(uint8_t instr)
 
         case 0xFB: // EI
         {
-            g_cpu.interruptMasterEnable    = true;
+            delayIMEUpdate = true;
             cycleCount = 1;
             incrementProgramCounterBy = 1;
             break;
@@ -1801,6 +1808,13 @@ int executeInstruction(uint8_t instr)
 
     stepCpu(incrementProgramCounterBy);
 
+    if (delayIMEUpdate && (updateIMEAfterCycles-- == 0))
+    {
+        g_cpu.interruptMasterEnable = true;
+        delayIMEUpdate = false;
+        updateIMEAfterCycles = 1;
+    }
+
     return cycleCount;
 }
 
@@ -1863,63 +1877,58 @@ int handleInterrupts(void)
 
 void handleTimers(int cpuCycles)
 {
-    static uint32_t divCounter    = 0;
-    static uint8_t  lastDivBit[4] = { 0 };
-    int bit;
-
-    if (g_pBus->map.ioregs.divRegister == 0)
-    {
-        // someone changed the DIV register, reset timer
-        g_pBus->map.ioregs.timers.TIMA = 0;
-    }
+    uint8_t bitPos = 0;
+    static bool previousBitValues[4] = { 0 };
 
     if (g_pBus->map.ioregs.timers.TAC.enable)
     {
         switch (g_pBus->map.ioregs.timers.TAC.clockSelect)
         {
             case 0:
-                bit = 9;
-                break; // 4096 Hz
+                bitPos = 9;
+                break; // 4096 Hz   -> 1024 T-cycles
             case 1:
-                bit = 3;
-                break; // 262144 Hz
+                bitPos = 3;
+                break; // 262144 Hz -> 16 T-cycles
             case 2:
-                bit = 5;
-                break; // 65536 Hz
+                bitPos = 5;
+                break; // 65536 Hz  -> 64 T-cycles
             case 3:
-                bit = 7;
-                break; // 16384 Hz
+                bitPos = 7;
+                break; // 16384 Hz  -> 256 T-cycles
         }
     }
 
     while (cpuCycles--)
     {
-        divCounter++;
-
-        // increment div for every 64 cpu cycles (16384Hz)
-        if ((divCounter & 0x3F) == 0)
-        {
-            g_pBus->map.ioregs.divRegister++;
-        }
+        g_cpu.divCounter++;
 
         if (g_pBus->map.ioregs.timers.TAC.enable)
         {
-            uint8_t currentBit = (divCounter >> bit) & 1;
+            bool bitIsCurrentlySet = g_cpu.divCounter & (1 << bitPos);
 
-            if (lastDivBit[g_pBus->map.ioregs.timers.TAC.clockSelect] && !currentBit)
+            if (bitIsCurrentlySet)
+            {
+                __asm("nop");
+            }
+
+            // check if we have a falling edge
+            if (!bitIsCurrentlySet && previousBitValues[g_pBus->map.ioregs.timers.TAC.clockSelect])
             {
                 g_pBus->map.ioregs.timers.TIMA++;
             }
 
-            lastDivBit[g_pBus->map.ioregs.timers.TAC.clockSelect] = currentBit;
-
-            if ( g_pBus->map.ioregs.timers.TIMA == 0x00)
+            if (g_pBus->map.ioregs.timers.TIMA == 0x00)
             {
                 g_pBus->map.ioregs.timers.TIMA    = g_pBus->map.ioregs.timers.TMA;
                 g_pBus->map.ioregs.intFlags.timer = 1;
             }
+
+            previousBitValues[g_pBus->map.ioregs.timers.TAC.clockSelect] = bitIsCurrentlySet;
         }
     }
+
+    g_pBus->map.ioregs.divRegister = (uint8_t)(g_cpu.divCounter >> 8) & 0xFF;
 }
 
 static int getRegisterIndexByOpcodeNibble(uint8_t lo)
@@ -1968,13 +1977,14 @@ static void cpuSkipBootrom(void)
     g_cpu.registers.reg8.l   = 0x4D;
     g_cpu.registers.reg16.sp = 0xFFFE;
     g_cpu.registers.reg16.pc = 0x100;
-    memset(&g_pBus->map.ioregs.lcd.control, 0x91, 1);
-    memset(&g_pBus->map.ioregs.lcd.stat, 0x85, 1);
-    memset(&g_pBus->map.ioregs.lcd.dma, 0xFF, 1);
-    memset(&g_pBus->map.ioregs.lcd.bgp, 0xFC, 1);
-    memset(&g_pBus->map.ioregs.joypad, 0xCF, 1);
-    memset(&g_pBus->map.ioregs.divRegister, 0x18, 1);
-    memset(&g_pBus->map.ioregs.timers.TAC, 0xF8, 1);
-    memset(&g_pBus->map.ioregs.intFlags, 0xE1, 1);
-    // todo: audio
+}
+
+static void bootromUnmapCallback(uint8_t data, uint16_t addr)
+{
+    //g_cpu.interruptMasterEnable = false;
+}
+
+static void divWriteCallback(uint8_t data, uint16_t addr)
+{
+    g_cpu.divCounter = 0;
 }

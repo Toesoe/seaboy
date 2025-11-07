@@ -41,8 +41,6 @@
 #define OAM_ENTRY_Y_OFFSET_LINES 16
 #define OAM_ENTRY_X_OFFSET_LINES 8
 
-#define CYCLES_PER_FRAME         70224 // 154 scanlines * 456 cycle
-
 typedef enum
 {
     MODE_0, // Hblank

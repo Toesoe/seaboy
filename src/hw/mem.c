@@ -23,9 +23,6 @@
 #include <stdio.h>
 #include <string.h>
 
-//#define TEST
-#define GB_DOCTOR
-
 #define DEBUG_WRITES
 #define BOOTROM_SIZE      (0x100)
 
@@ -96,6 +93,18 @@ void initializeBus(const SCartridge_t *pCartridge, bool skipBootrom)
     g_bus.map.pRom0              = g_busState.pCurrentCartridge->pCurrentRomBank0;
     g_bus.map.pRom1              = g_busState.pCurrentCartridge->pCurrentRomBank1;
     g_bus.map.pEram              = g_busState.pCurrentCartridge->pCurrentRamBank;
+
+    if (skipBootrom)
+    {
+        memset(&g_bus.map.ioregs.lcd.control, 0x91, 1);
+        memset(&g_bus.map.ioregs.lcd.stat, 0x85, 1);
+        memset(&g_bus.map.ioregs.lcd.dma, 0xFF, 1);
+        memset(&g_bus.map.ioregs.lcd.bgp, 0xFC, 1);
+        memset(&g_bus.map.ioregs.joypad, 0xCF, 1);
+        memset(&g_bus.map.ioregs.divRegister, 0x18, 1);
+        memset(&g_bus.map.ioregs.timers.TAC, 0xF8, 1);
+        memset(&g_bus.map.ioregs.intFlags, 0xE1, 1);
+    }
 }
 
 void overrideBus(SAddressBus_t *pBus)
@@ -271,25 +280,34 @@ SAddressBus_t *const pGetAddressBus(void)
 
 static void handleIORegWrite8(uint8_t data, uint16_t addr)
 {
-    bool writeToBus = false;
+    // when true, will write <data> to bus at <addr> after cb execution
+    bool writeToBus = true;
 
     switch (addr)
     {
         case JOYPAD_INPUT_ADDR:
         {
             // set joypad state from local registers
-            g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(data, addr);
+            if (g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb)
+            {
+                g_busState.cbRegister[JOYPAD_REG_CALLBACK].cb(data, addr);
+            }
+            writeToBus = false;
             break;
         }
         case BOOT_ROM_MAPPER_CONTROL_ADDR:
         {
             g_bus.map.ioregs.disableBootrom = 0;
             g_busState.bootromIsMapped      = false;
+            if (g_busState.cbRegister[BOOTROM_UNMAP_CALLBACK].cb)
+            {
+                g_busState.cbRegister[BOOTROM_UNMAP_CALLBACK].cb(data, addr);
+            }
+            writeToBus = false;
             break;
         }
         case OAM_DMA_ADDR:
         {
-            writeToBus = true;
             memcpy(&g_bus.map.oam, &g_bus.bus[(uint16_t)(data << 8)], 0x9F);
             // costs 160 mcycles! handle in cb
             if (g_busState.cbRegister[OAM_DMA_CALLBACK].cb != nullptr)
@@ -300,6 +318,7 @@ static void handleIORegWrite8(uint8_t data, uint16_t addr)
         }
         case AUDIO_MASTER_CONTROL_ADDR:
         {
+            writeToBus = false;
             if ((data & 0x80) == 0)
             {
                 // APU disabled! reset regs..
@@ -312,37 +331,61 @@ static void handleIORegWrite8(uint8_t data, uint16_t addr)
                 g_bus.map.ioregs.audio.masterControl.audioMasterEnable = 1;
             }
 
-            g_busState.cbRegister[AUDIO_MASTER_CONTROL_CALLBACK].cb(data, addr);
+            if (g_busState.cbRegister[AUDIO_MASTER_CONTROL_CALLBACK].cb)
+            {
+                g_busState.cbRegister[AUDIO_MASTER_CONTROL_CALLBACK].cb(data, addr);
+            }
             break;
         }
         case AUDIO_CH1_CONTROL_ADDR:
         {
-            g_busState.cbRegister[AUDIO_CH1_CONTROL_CALLBACK].cb(data, addr);
+            writeToBus = false;
+            if (g_busState.cbRegister[AUDIO_CH1_CONTROL_CALLBACK].cb)
+            {
+                g_busState.cbRegister[AUDIO_CH1_CONTROL_CALLBACK].cb(data, addr);
+            }
             break;
         }
         case AUDIO_CH2_CONTROL_ADDR:
         {
-            g_busState.cbRegister[AUDIO_CH2_CONTROL_CALLBACK].cb(data, addr);
+            writeToBus = false;
+            if (g_busState.cbRegister[AUDIO_CH2_CONTROL_CALLBACK].cb)
+            {
+                g_busState.cbRegister[AUDIO_CH2_CONTROL_CALLBACK].cb(data, addr);
+            }
             break;
         }
         case AUDIO_CH3_CONTROL_ADDR:
         {
-            g_busState.cbRegister[AUDIO_CH3_CONTROL_CALLBACK].cb(data, addr);
+            writeToBus = false;
+            if (g_busState.cbRegister[AUDIO_CH3_CONTROL_CALLBACK].cb)
+            {
+                g_busState.cbRegister[AUDIO_CH3_CONTROL_CALLBACK].cb(data, addr);
+            }
+            break;
             break;
         }
         case AUDIO_CH4_CONTROL_ADDR:
         {
-            g_busState.cbRegister[AUDIO_CH4_CONTROL_CALLBACK].cb(data, addr);
+            writeToBus = false;
+            if (g_busState.cbRegister[AUDIO_CH4_CONTROL_CALLBACK].cb)
+            {
+                g_busState.cbRegister[AUDIO_CH4_CONTROL_CALLBACK].cb(data, addr);
+            }
+            break;
             break;
         }
         case DIVIDER_ADDR:
         {
-            g_bus.map.ioregs.divRegister = 0; // writing any value here sets it to 0
+            writeToBus = false;
+            if (g_busState.cbRegister[DIV_CALLBACK].cb)
+            {
+                g_busState.cbRegister[DIV_CALLBACK].cb(data, addr);
+            }
             break;
         }
         case SERIAL_TRANSFER_ADDR:
         case TIMER_ADDR:
-        
         default:
         {
             break;
