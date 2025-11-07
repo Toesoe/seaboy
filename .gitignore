@@ -71,4 +71,4 @@ src/instructions
 tests
 
 # gameboy-doctor
-.log
+*.log

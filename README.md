@@ -14,7 +14,11 @@ feature list:
 - ❕ interrupt behaviour
     - timing of EI is off
 - ❕ APU
-    - as of now, both pulse channels and wave are implemented, but unfiltered and rough. noise is TODO
+    - as of now, both pulse channels and wave are implemented
+    - noise channel TODO
+    - output is rough, needs filtering
+    - playback is too slow. might be related to global system clocking
+    - wavechannel keeps playing after it should be silent
 - ✅ PPU
 - ✅ full bus
 - ❌ mapper support

@@ -427,8 +427,6 @@ static void triggerPulseChannel(size_t num)
 
 static void tickWaveChannel(size_t cycles)
 {
-    g_currentAPUState.ch3.volume = g_currentAPUState.ch3.pNR32->outputLevel;
-
     g_currentAPUState.ch3.samplePeriod -= cycles;
 
     while (g_currentAPUState.ch3.samplePeriod <= 0)
@@ -436,8 +434,6 @@ static void tickWaveChannel(size_t cycles)
         g_currentAPUState.ch3.samplePeriod += WAVE_TIMER_PERIOD(getWaveFreqValue());
         if (++g_currentAPUState.ch3.sampleIndex == WAVETABLE_ENTRIES) { g_currentAPUState.ch3.sampleIndex = 0; }
     }
-
-    g_currentAPUState.ch3.lengthCounter = 256 - *g_currentAPUState.ch3.pNR31;
 
     if (*(uint8_t *)g_currentAPUState.ch3.pNR31 != g_currentAPUState.ch3.prevNR31)
     {
@@ -448,8 +444,6 @@ static void tickWaveChannel(size_t cycles)
 
 static void triggerWaveChannel(void)
 {
-    g_currentAPUState.ch3.active = true;
-
     if (!g_currentAPUState.ch3.lengthCounter)
     {
         g_currentAPUState.ch3.lengthCounter = 256 - *g_currentAPUState.ch3.pNR31;
@@ -457,6 +451,11 @@ static void triggerWaveChannel(void)
 
     g_currentAPUState.ch3.sampleIndex = 0;
     g_currentAPUState.ch3.samplePeriod      = WAVE_TIMER_PERIOD(getWaveFreqValue());
+
+    if (g_currentAPUState.ch3.pNR32->outputLevel != 0)
+    {
+        g_currentAPUState.ch3.active = true;
+    }
 }
 
 static void tickNoiseChannel(size_t cycles)
@@ -620,46 +619,45 @@ void updateSampleBuffer(size_t cycles)
     {
         sampleCounter -= APU_CYCLES_PER_SAMPLE;
 
-        int16_t mix = 0;
+        int16_t ch1 = 0, ch2 = 0, ch3 = 0, ch4 = 0;
 
         if (g_currentAPUState.audioControl.pNR52->audioMasterEnable)
         {
             if (g_currentAPUState.ch1.active && (g_currentAPUState.ch1.lengthCounter > 0))
             {
-                int16_t s =
+                ch1 =
                 sc_dutyWaveforms[g_currentAPUState.ch1.pNRx1->waveDuty][g_currentAPUState.ch1.waveformIndex] ?
                 (int16_t)g_currentAPUState.ch1.volume :
                 -(int16_t)g_currentAPUState.ch1.volume;
-                mix += s * 200;
             }
             if (g_currentAPUState.ch2.active && (g_currentAPUState.ch2.lengthCounter > 0))
             {
-                int16_t s =
+                ch2 =
                 sc_dutyWaveforms[g_currentAPUState.ch2.pNRx1->waveDuty][g_currentAPUState.ch2.waveformIndex] ?
                 (int16_t)g_currentAPUState.ch2.volume :
                 -(int16_t)g_currentAPUState.ch2.volume;
-                mix += s * 200;
             }
+
             if (g_currentAPUState.ch3.active && (g_currentAPUState.ch3.lengthCounter > 0))
             {
-                uint8_t byte = g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2];
                 int16_t sample;
+
                 if (g_currentAPUState.ch3.sampleIndex % 2 == 0)
                 {
-                    sample = byte >> 4;
+                    sample = g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2] >> 4;
                 }
                 else
                 {
-                    sample = byte & 0x0F;
+                    sample = g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2] & 0x0F;
                 }
 
-                if (g_currentAPUState.ch3.volume != 0)
+                if (g_currentAPUState.ch3.pNR32->outputLevel != 0)
                 {
                     // signed PCM conversion
                     sample -= 8;
-                    sample >>= (g_currentAPUState.ch3.volume ? g_currentAPUState.ch3.volume - 1 : 0);
+                    sample >>= (g_currentAPUState.ch3.pNR32->outputLevel ? g_currentAPUState.ch3.pNR32->outputLevel - 1 : 0);
 
-                    mix += sample * 200; // scale like pulse
+                    ch3 = sample;
                 }
             }
             if (g_currentAPUState.ch4.active)
@@ -670,7 +668,7 @@ void updateSampleBuffer(size_t cycles)
 
         if ((sampleWriteIndex - sampleReadIndex) < SAMPLE_BUFFER_SIZE)
         {
-            sampleBuffer[sampleWriteIndex & (SAMPLE_BUFFER_SIZE - 1)] = mix;
+            sampleBuffer[sampleWriteIndex & (SAMPLE_BUFFER_SIZE - 1)] = (ch1 + ch2 + ch3 + ch4) * 200;
             sampleWriteIndex++;
         }
     }
