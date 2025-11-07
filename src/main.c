@@ -61,9 +61,13 @@ int main()
     initRenderWindow();
     initAudio();
 
+    SCPUExecuteReturnState_t cpuStateCurrentCycle;
+
     // frame timing sync
     uint64_t lastFrameTime = SDL_GetPerformanceCounter();
     double   freq          = (double)SDL_GetPerformanceFrequency();
+
+    uint8_t delayedIMECounter = 0;
 
 #ifdef GB_DOCTOR
     FILE *f = fopen("gb.log", "w");
@@ -71,7 +75,6 @@ int main()
 
     while (true)
     {
-        int     mCycles = 0;
         uint8_t opcode  = fetch8(pCpu->reg16.pc);
 
         // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
@@ -81,31 +84,38 @@ int main()
                 pCpu->reg16.sp, pCpu->reg16.pc, fetch8(pCpu->reg16.pc), fetch8(pCpu->reg16.pc+1), fetch8(pCpu->reg16.pc+2), fetch8(pCpu->reg16.pc+3));
 #endif
 
-        if (pCpu->reg16.pc == 0x100)
+        if (pCpu->reg16.pc == 0xC2BE)
         {
             __asm("nop");
         }
-
         if (!checkHalted() || !checkStopped())
         {
-            //log_instruction_fetch(opcode);
-            mCycles += executeInstruction(opcode);
+            // decode - execute
+            cpuStateCurrentCycle = executeInstruction(opcode);
+        }
+
+        if (checkDelayedIMELatch())
+        {
+            delayedIMECounter++;
+
+            if (delayedIMECounter == 2)
+            {
+                setIME();
+                resetDelayedIMELatch();
+                delayedIMECounter = 0;
+            }
         }
 
         if (!checkStopped())
         {
             // clock peripherals with T-cycles
-            handleTimers(mCycles * 4);
-            frameComplete = ppuTick(mCycles * 4);
-            apuTick(mCycles * 4);
-        }
+            handleTimers(cpuStateCurrentCycle.mCyclesExecuted * 4);
+            frameComplete = ppuTick(cpuStateCurrentCycle.mCyclesExecuted * 4);
+            apuTick(cpuStateCurrentCycle.mCyclesExecuted * 4);
 
-        if (checkIME())
-        {
-            mCycles += handleInterrupts();
+            if (!checkHalted()) { stepCpu(cpuStateCurrentCycle.programCounterSteps); }
+            cpuStateCurrentCycle.mCyclesExecuted += handleInterrupts();
         }
-
-        imePrev = checkIME();
 
         if ((cycleCounter % (CYCLES_PER_FRAME / 4)) == 0)
         {

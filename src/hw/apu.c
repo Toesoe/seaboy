@@ -46,7 +46,7 @@
 #define WAVE_TIMER_PERIOD(freq)  (((2048 - (freq)) * 2))
 
 #define SDL_SAMPLE_RATE          44100
-#define APU_CLOCK                (CPU_CLOCK_SPEED_HZ / 4)
+#define APU_CLOCK                (CPU_CLOCK_SPEED_HZ)
 
 #define SAMPLE_BUFFER_SIZE       2048
 
@@ -402,7 +402,8 @@ static void triggerPulseChannel(size_t num)
         {
             clockFrequencySweep();
         }
-        debugPulseChannelTrigger();
+
+        //debugPulseChannelTrigger();
 
         if ((*(uint8_t *)g_currentAPUState.ch1.pNRx2 & 0xF8) != 0)
         {
@@ -699,21 +700,6 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
     {
         case AUDIO_MASTER_CONTROL_ADDR:
         {
-            if (g_previousAPUState.audioControl.pNR52->audioMasterEnable !=
-                g_currentAPUState.audioControl.pNR52->audioMasterEnable)
-            {
-                if (g_currentAPUState.audioControl.pNR52->audioMasterEnable == 0)
-                {
-                    memset(&g_pBus->bus[AUDIO_REGS_START_ADDR], 0x00, AUDIO_REGS_END_ADDR - AUDIO_REGS_START_ADDR);
-                }
-                else
-                {
-                    g_currentAPUState.frameSequencerStep = 0;
-                    g_currentAPUState.ch1.waveformIndex  = 0;
-                    g_currentAPUState.ch2.waveformIndex  = 0;
-                    // TODO: wave channel sample buffer to 0
-                }
-            }
             if ((g_previousAPUState.audioControl.pNR52->ch1Enable !=
                  g_currentAPUState.audioControl.pNR52->ch1Enable) &&
                 (g_currentAPUState.audioControl.pNR52->ch1Enable == 0))

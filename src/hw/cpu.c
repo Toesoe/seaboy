@@ -28,9 +28,13 @@ typedef struct
 {
     SCPURegisters_t registers;
     bool interruptMasterEnable;
+    bool delayedIMELatch;
     bool isHalted;  // HALT
     bool isStopped; // STOP
+
     uint16_t divCounter;
+    uint8_t  timaPendingReloadDelay;
+    uint8_t  timaPreviousSignalLevels[4];
 } SCPU_t;
 
 static SCPU_t g_cpu;
@@ -142,6 +146,16 @@ void resetIME()
 bool checkIME()
 {
     return g_cpu.interruptMasterEnable;
+}
+
+bool checkDelayedIMELatch()
+{
+    return g_cpu.delayedIMELatch;
+}
+
+bool resetDelayedIMELatch()
+{
+    g_cpu.delayedIMELatch = false;
 }
 
 bool checkHalted()
@@ -717,12 +731,12 @@ static int decodeCbPrefix()
     return addCycles;
 }
 
-int executeInstruction(uint8_t instr)
+SCPUExecuteReturnState_t executeInstruction(uint8_t instr)
 {
-    size_t  incrementProgramCounterBy = 1; // default value
-    int     cycleCount                = 1;
-    static bool   delayIMEUpdate      = false;
-    static size_t updateIMEAfterCycles  = 1;
+    SCPUExecuteReturnState_t retval = {
+        .programCounterSteps = 1,
+        .mCyclesExecuted = 1
+    };
 
     uint8_t hi                        = instr >> 4;
     uint8_t lo                        = instr & 15;
@@ -740,8 +754,8 @@ int executeInstruction(uint8_t instr)
         case 0x31: // LD SP,d16
         {
             ld_reg16_imm(BC + hi); // use high nibble
-            incrementProgramCounterBy = 3;
-            cycleCount                = 3;
+            retval.programCounterSteps = 3;
+            retval.mCyclesExecuted                = 3;
             break;
         }
         case 0x02: // LD (BC),A
@@ -749,141 +763,141 @@ int executeInstruction(uint8_t instr)
         {
             Register16 reg = BC + hi; // use high nibble
             ld_addr_reg8(g_cpu.registers.reg16_arr[reg], A);
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0x22: // LD (HL+),A
         {
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             ld_addr_reg8(g_cpu.registers.reg16.hl++, A);
             break;
         }
         case 0x32: // LD (HL-),A
         {
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             ld_addr_reg8(g_cpu.registers.reg16.hl--, A);
             break;
         }
         case 0x06: // LD B,d8
         {
             ld_reg8_imm(B);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x16: // LD D,d8
         {
             ld_reg8_imm(D);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x26: // LD H,d8
         {
             ld_reg8_imm(H);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x36: // LD (HL),d8
         {
-            incrementProgramCounterBy = 2;
-            cycleCount                = 3;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 3;
             ld_addr_imm8(g_cpu.registers.reg16.hl);
             break;
         }
         case 0x0A: // LD A,(BC)
         {
             ld_reg8_addr(A, g_cpu.registers.reg16.bc);
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0x1A: // LD A,(DE)
         {
             ld_reg8_addr(A, g_cpu.registers.reg16.de);
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0x2A: // LD A,(HL+)
         {
             ld_reg8_addr(A, g_cpu.registers.reg16.hl);
             g_cpu.registers.reg16.hl++;
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0x3A: // LD A,(HL-)
         {
             ld_reg8_addr(A, g_cpu.registers.reg16.hl);
             g_cpu.registers.reg16.hl--;
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0x0E: // LD C,d8
         {
             ld_reg8_imm(C);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x1E: // LD E,d8
         {
             ld_reg8_imm(E);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x2E: // LD L,d8
         {
             ld_reg8_imm(L);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0x3E: // LD A,d8
         {
             ld_reg8_imm(A);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
         case 0xE2: // LD (0xFF00 + C),A
         {
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             ld_addr_reg8(0xFF00 + g_cpu.registers.reg8.c, A);
             break;
         }
         case 0xF2: // LD A, (0xFF00 + C)
         {
             ld_reg8_addr(A, 0xFF00 + g_cpu.registers.reg8.c);
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             break;
         }
         case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit imm unsigned)
         {
             ld_addr_reg8(0xFF00 + fetch8(g_cpu.registers.reg16.pc + 1), A);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 3;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 3;
             break;
         }
         case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
         {
             ld_reg8_addr(A, 0xFF00 + fetch8(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 2;
-            cycleCount                = 3;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 3;
             break;
         }
         case 0xEA: // LD (a16), A (load from A to addr)
         {
             ld_addr_reg8(fetch16(g_cpu.registers.reg16.pc + 1), A);
-            incrementProgramCounterBy = 3;
-            cycleCount                = 4;
+            retval.programCounterSteps = 3;
+            retval.mCyclesExecuted                = 4;
             break;
         }
         case 0xFA: // LD A, (a16) (load from addr to A)
         {
             ld_reg8_addr(A, fetch16(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 3;
-            cycleCount                = 4;
+            retval.programCounterSteps = 3;
+            retval.mCyclesExecuted                = 4;
             break;
         }
         case 0x0C: // INC C
@@ -897,8 +911,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(C);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x1C: // INC E
@@ -912,8 +926,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(E);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x2C: // INC L
@@ -927,8 +941,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(L);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x3C: // INC A
@@ -942,8 +956,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(A);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;;
             break;
         }
         case 0x04: // INC B
@@ -957,8 +971,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(B);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x14: // INC D
@@ -972,8 +986,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(D);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x24: // INC H
@@ -987,8 +1001,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_reg(H);
             }
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x34: // INC (HL)
@@ -1002,8 +1016,8 @@ int executeInstruction(uint8_t instr)
             {
                 dec8_mem(g_cpu.registers.reg16.hl);
             }
-            cycleCount = 3;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 3;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x03: // INC BC
@@ -1024,42 +1038,42 @@ int executeInstruction(uint8_t instr)
             {
                 dec16_reg(reg);
             }
-            cycleCount = 2;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 2;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x07: // RLCA (rotate left circular A)
         {
             rlca();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x17: // RLA (rotate left through carry A)
         {
             rla();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x0F: // RRCA (rotate right circular A)
         {
             rrca();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0x1F: // RRA (rotate right through carry A)
         {
             rra();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
         case 0xCB: // CB-prefixed
         {
-            cycleCount = 2 + decodeCbPrefix(); // all CB's use at least 2 cycles
-            incrementProgramCounterBy = 2; // CB doesn't take immediates, always 2 bytes
+            retval.mCyclesExecuted = 2 + decodeCbPrefix(); // all CB's use at least 2 cycles
+            retval.programCounterSteps = 2; // CB doesn't take immediates, always 2 bytes
             break;
         }
 
@@ -1069,74 +1083,74 @@ int executeInstruction(uint8_t instr)
         case 0x18: // JR s8: relative jump
         {
             jr_imm8();
-            incrementProgramCounterBy = 0;
-            cycleCount                = 3;
+            retval.programCounterSteps = 0;
+            retval.mCyclesExecuted                = 3;
             break;
         }
         case 0x20: // JR NZ,s8
         case 0x28: // JR Z,s8
         {
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             if (jr_imm8_cond(FLAG_Z, (lo == 0x8 ? true : false)))
             {
-                cycleCount++;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted++;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 2;
+                retval.programCounterSteps = 2;
             }
             break;
         }
         case 0x30: // JR NC,s8
         case 0x38: // JR C,s8
         {
-            cycleCount = 2;
+            retval.mCyclesExecuted = 2;
             if (jr_imm8_cond(FLAG_C, (lo == 0x8 ? true : false)))
             {
-                cycleCount++;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted++;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 2;
+                retval.programCounterSteps = 2;
             }
             break;
         }
         case 0xC3: // JP a16
         {
             jmp_imm16();
-            incrementProgramCounterBy = 0;
-            cycleCount                = 4;
+            retval.programCounterSteps = 0;
+            retval.mCyclesExecuted                = 4;
             break;
         }
         case 0xC2: // JP NZ,a16
         case 0xCA: // JP Z,a16
         {
-            cycleCount = 3;
+            retval.mCyclesExecuted = 3;
             if (jmp_imm16_cond(FLAG_Z, (lo == 0xA ? true : false)))
             {
-                cycleCount++;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted++;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 3;
+                retval.programCounterSteps = 3;
             }
             break;
         }
         case 0xD2: // JP NC,a16
         case 0xDA: // JP C,a16
         {
-            cycleCount = 3;
+            retval.mCyclesExecuted = 3;
             if (jmp_imm16_cond(FLAG_C, (lo == 0xA ? true : false)))
             {
-                cycleCount++;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted++;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 3;
+                retval.programCounterSteps = 3;
             }
             break;
         }
@@ -1144,8 +1158,8 @@ int executeInstruction(uint8_t instr)
         case 0xE9: // JP HL
         {
             jmp_hl();
-            cycleCount                = 1;
-            incrementProgramCounterBy = 0;
+            retval.mCyclesExecuted                = 1;
+            retval.programCounterSteps = 0;
             break;
         }
 
@@ -1154,37 +1168,37 @@ int executeInstruction(uint8_t instr)
         case 0xC4: // CALL NZ,a16
         case 0xCC: // CALL Z,a16
         {
-            cycleCount = 3;
+            retval.mCyclesExecuted = 3;
             if (call_imm16_cond(FLAG_Z, (lo == 0xC ? true : false)))
             {
-                cycleCount += 3;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted += 3;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 3;
+                retval.programCounterSteps = 3;
             }
             break;
         }
         case 0xD4: // CALL NC,a16
         case 0xDC: // CALL C,a16
         {
-            cycleCount = 3;
+            retval.mCyclesExecuted = 3;
             if (call_imm16_cond(FLAG_C, (lo == 0xC ? true : false)))
             {
-                cycleCount += 3;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted += 3;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                incrementProgramCounterBy = 3;
+                retval.programCounterSteps = 3;
             }
             break;
         }
         case 0xCD: // CALL a16
         {
-            cycleCount                = 6;
-            incrementProgramCounterBy = 0;
+            retval.mCyclesExecuted                = 6;
+            retval.programCounterSteps = 0;
             call_imm16();
             break;
         }
@@ -1194,30 +1208,30 @@ int executeInstruction(uint8_t instr)
         case 0xC1: // POP BC
         {
             pop_reg16(BC);
-            incrementProgramCounterBy = 1;
-            cycleCount = 3;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 3;
             break;
         }
         case 0xD1: // POP DE
         {
             pop_reg16(DE);
-            incrementProgramCounterBy = 1;
-            cycleCount = 3;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 3;
             break;
         }
         case 0xE1: // POP HL
         {
             pop_reg16(HL);
-            incrementProgramCounterBy = 1;
-            cycleCount = 3;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 3;
             break;
         }
         case 0xF1: // POP AF
         {
             pop_reg16(AF);
             g_cpu.registers.reg8.f &= 0xF0;
-            incrementProgramCounterBy = 1;
-            cycleCount = 3;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 3;
             break;
         }
 
@@ -1226,29 +1240,29 @@ int executeInstruction(uint8_t instr)
         case 0xC5: // PUSH BC
         {
             push_reg16(BC);
-            incrementProgramCounterBy = 1;
-            cycleCount = 4;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 4;
             break;
         }
         case 0xD5: // PUSH DE
         {
             push_reg16(DE);
-            incrementProgramCounterBy = 1;
-            cycleCount = 4;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 4;
             break;
         }
         case 0xE5: // PUSH HL
         {
             push_reg16(HL);
-            incrementProgramCounterBy = 1;
-            cycleCount = 4;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 4;
             break;
         }
         case 0xF5: // PUSH AF
         {
             push_reg16(AF);
-            incrementProgramCounterBy = 1;
-            cycleCount = 4;
+            retval.programCounterSteps = 1;
+            retval.mCyclesExecuted = 4;
             break;
         }
 
@@ -1256,16 +1270,16 @@ int executeInstruction(uint8_t instr)
         case 0xC9: // RET
         {
             ret();
-            incrementProgramCounterBy = 0;
-            cycleCount                = 4;
+            retval.programCounterSteps = 0;
+            retval.mCyclesExecuted                = 4;
             break;
         }
         case 0xD9: // RETI
         {
             g_cpu.interruptMasterEnable = true;
             ret();
-            incrementProgramCounterBy   = 0;
-            cycleCount                  = 4;
+            retval.programCounterSteps   = 0;
+            retval.mCyclesExecuted                  = 4;
             break;
         }
 
@@ -1274,13 +1288,13 @@ int executeInstruction(uint8_t instr)
             if (!testFlag(FLAG_Z))
             {
                 ret();
-                cycleCount                = 5;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted                = 5;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                cycleCount = 2;
-                incrementProgramCounterBy = 1;
+                retval.mCyclesExecuted = 2;
+                retval.programCounterSteps = 1;
             }
             break;
         }
@@ -1290,13 +1304,13 @@ int executeInstruction(uint8_t instr)
             if (testFlag(FLAG_Z))
             {
                 ret();
-                cycleCount                = 5;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted                = 5;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                cycleCount = 2;
-                incrementProgramCounterBy = 1;
+                retval.mCyclesExecuted = 2;
+                retval.programCounterSteps = 1;
             }
             break;
         }
@@ -1306,13 +1320,13 @@ int executeInstruction(uint8_t instr)
             if (!testFlag(FLAG_C))
             {
                 ret();
-                cycleCount                = 5;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted                = 5;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                cycleCount = 2;
-                incrementProgramCounterBy = 1;
+                retval.mCyclesExecuted = 2;
+                retval.programCounterSteps = 1;
             }
             break;
         }
@@ -1322,29 +1336,29 @@ int executeInstruction(uint8_t instr)
             if (testFlag(FLAG_C))
             {
                 ret();
-                cycleCount                = 5;
-                incrementProgramCounterBy = 0;
+                retval.mCyclesExecuted                = 5;
+                retval.programCounterSteps = 0;
             }
             else
             {
-                cycleCount = 2;
-                incrementProgramCounterBy = 1;
+                retval.mCyclesExecuted = 2;
+                retval.programCounterSteps = 1;
             }
             break;
         }
 
         case 0x76: // HALT
         {
-            cycleCount                  = 1;
-            incrementProgramCounterBy   = 1;
+            retval.mCyclesExecuted                  = 1;
+            retval.programCounterSteps   = 1;
             g_cpu.isHalted              = true;
             break;
         }
 
         case 0x10: // STOP
         {
-            cycleCount                  = 2;
-            incrementProgramCounterBy   = 1;
+            retval.mCyclesExecuted                  = 2;
+            retval.programCounterSteps   = 1;
             g_cpu.isStopped             = true;
             g_cpu.interruptMasterEnable = false;
             g_pBus->map.ioregs.divRegister = 0;
@@ -1354,48 +1368,48 @@ int executeInstruction(uint8_t instr)
         case 0x27: // DAA
         {
             daa();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
         case 0x2F: // CPL
         {
             cpl();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
         case 0x3F: // CCF
         {
             ccf();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
         case 0x37: // SCF
         {
             scf();
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
         case 0xF3: // DI
         {
             g_cpu.interruptMasterEnable    = false;
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
         case 0xFB: // EI
         {
-            delayIMEUpdate = true;
-            cycleCount = 1;
-            incrementProgramCounterBy = 1;
+            g_cpu.delayedIMELatch = true;
+            retval.mCyclesExecuted = 1;
+            retval.programCounterSteps = 1;
             break;
         }
 
@@ -1405,8 +1419,8 @@ int executeInstruction(uint8_t instr)
         case 0x39: // ADD HL, SP
         {
             add16_hl_n(g_cpu.registers.reg16_arr[BC + hi]); // AF = 0, BC = 1, etc
-            cycleCount = 2;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 2;
+            retval.programCounterSteps = 1;
             break;
         }
 
@@ -1420,104 +1434,104 @@ int executeInstruction(uint8_t instr)
         case 0xFF: // RST 7
         {
             rst_n(instr & 0x38);
-            cycleCount                = 4;
-            incrementProgramCounterBy = 0; // PC is set explicitly
+            retval.mCyclesExecuted                = 4;
+            retval.programCounterSteps = 0; // PC is set explicitly
             break;
         }
 
         case 0xC6: // ADD a, d8
         {
             add8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            cycleCount                = 2;
-            incrementProgramCounterBy = 2;
+            retval.mCyclesExecuted                = 2;
+            retval.programCounterSteps = 2;
             break;
         }
 
         case 0xD6: // SUB d8
         {
             sub8_n_a(fetch8(g_cpu.registers.reg16.pc + 1));
-            cycleCount                = 2;
-            incrementProgramCounterBy = 2;
+            retval.mCyclesExecuted                = 2;
+            retval.programCounterSteps = 2;
             break;
         }
 
         case 0xE6: // AND d8
         {
             and8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            cycleCount                = 2;
-            incrementProgramCounterBy = 2;
+            retval.mCyclesExecuted                = 2;
+            retval.programCounterSteps = 2;
             break;
         }
 
         case 0xF6: // ADD a, d8
         {
             or8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            cycleCount                = 2;
-            incrementProgramCounterBy = 2;
+            retval.mCyclesExecuted                = 2;
+            retval.programCounterSteps = 2;
             break;
         }
 
         case 0xCE: // ADC a, d8
         {
             adc8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            cycleCount                = 2;
-            incrementProgramCounterBy = 2;
+            retval.mCyclesExecuted                = 2;
+            retval.programCounterSteps = 2;
             break;
         }
 
         case 0xDE: // SBC a, d8
         {
             sbc8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
 
         case 0xEE: // XOR d8
         {
             xor8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
 
         case 0xFE: // CP d8
         {
             cp8_a_n(fetch8(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 2;
-            cycleCount                = 2;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 2;
             break;
         }
 
         case 0xE8: // ADD SP, s8
         {
             g_cpu.registers.reg16.sp += (int8_t)fetch8(g_cpu.registers.reg16.pc + 1);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 4;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 4;
             break;
         }
 
         case 0x08: // LD (a16), SP
         {
             write16(g_cpu.registers.reg16.sp, fetch16(g_cpu.registers.reg16.pc + 1));
-            incrementProgramCounterBy = 3;
-            cycleCount                = 5;
+            retval.programCounterSteps = 3;
+            retval.mCyclesExecuted                = 5;
             break;
         }
 
         case 0xF8: // LD HL, SP+s8
         {
             g_cpu.registers.reg16.hl = g_cpu.registers.reg16.sp + (int8_t)fetch8(g_cpu.registers.reg16.pc + 1);
-            incrementProgramCounterBy = 2;
-            cycleCount                = 3;
+            retval.programCounterSteps = 2;
+            retval.mCyclesExecuted                = 3;
             break;
         }
 
         case 0xF9: // LD SP, HL
         {
             g_cpu.registers.reg16.sp = g_cpu.registers.reg16.hl;
-            cycleCount = 2;
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted = 2;
+            retval.programCounterSteps = 1;
             break;
         }
 
@@ -1528,8 +1542,8 @@ int executeInstruction(uint8_t instr)
             bool      hl     = false;
             bool      hlLeft = false;
 
-            cycleCount       = 1; // by default: only (HL) has 2 cycles
-            incrementProgramCounterBy = 1;
+            retval.mCyclesExecuted       = 1; // by default: only (HL) has 2 cycles
+            retval.programCounterSteps = 1;
 
             switch (hi)
             {
@@ -1553,7 +1567,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
@@ -1578,7 +1592,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
@@ -1603,7 +1617,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
@@ -1613,7 +1627,7 @@ int executeInstruction(uint8_t instr)
                 {
                     if (lo <= 0x07) // (HL). no need to worry about HALT, already handled above
                     {
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         if (lo != 0x07) { regR = getRegisterIndexByOpcodeNibble(lo); }
                         ld_addr_reg8(g_cpu.registers.reg16.hl, regR);
                         break;
@@ -1634,7 +1648,7 @@ int executeInstruction(uint8_t instr)
                     }
                     else
                     {
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         ld_reg8_addr(regL, g_cpu.registers.reg16.hl);
                     }
 
@@ -1652,7 +1666,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x06)
                     {
                         // ADD (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         add8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x07)
@@ -1668,7 +1682,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x0E)
                     {
                         // ADC (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         adc8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x0F)
@@ -1690,7 +1704,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x06)
                     {
                         // SUB (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         sub8_n_a(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x07)
@@ -1706,7 +1720,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x0E)
                     {
                         // SBC (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         sbc8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x0F)
@@ -1729,7 +1743,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x06)
                     {
                         // AND (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         and8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x07)
@@ -1745,7 +1759,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x0E)
                     {
                         // XOR (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         xor8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x0F)
@@ -1768,7 +1782,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x06)
                     {
                         // OR (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         or8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x07)
@@ -1784,7 +1798,7 @@ int executeInstruction(uint8_t instr)
                     else if (lo == 0x0E)
                     {
                         // CP (HL)
-                        cycleCount       = 2;
+                        retval.mCyclesExecuted       = 2;
                         cp8_a_n(fetch8(g_cpu.registers.reg16.hl));
                     }
                     else if (lo == 0x0F)
@@ -1806,23 +1820,20 @@ int executeInstruction(uint8_t instr)
         }
     }
 
-    stepCpu(incrementProgramCounterBy);
-
-    if (delayIMEUpdate && (updateIMEAfterCycles-- == 0))
-    {
-        g_cpu.interruptMasterEnable = true;
-        delayIMEUpdate = false;
-        updateIMEAfterCycles = 1;
-    }
-
-    return cycleCount;
+    return retval;
 }
 
 int handleInterrupts(void)
 {
     bool fired = false;
+    bool intPending = (*(uint8_t *)&g_pBus->map.interruptEnable & *(uint8_t *)&g_pBus->map.ioregs.intFlags);
 
-    if (g_cpu.interruptMasterEnable)
+    if (g_cpu.isHalted && intPending)
+    {
+        g_cpu.isHalted = false; // wake CPU
+    }
+
+    if (g_cpu.interruptMasterEnable && intPending)
     {
         if (g_pBus->map.interruptEnable.vblank && g_pBus->map.ioregs.intFlags.vblank)
         {
@@ -1864,10 +1875,6 @@ int handleInterrupts(void)
 
         if (fired)
         {
-            if (g_cpu.isHalted)
-            {
-                g_cpu.isHalted = false;
-            }
             g_cpu.interruptMasterEnable = false;
             return 5;
         }
@@ -1878,7 +1885,7 @@ int handleInterrupts(void)
 void handleTimers(int cpuCycles)
 {
     uint8_t bitPos = 0;
-    static bool previousBitValues[4] = { 0 };
+    static bool remainingCyclesTIMAReset = 4;
 
     if (g_pBus->map.ioregs.timers.TAC.enable)
     {
@@ -1905,26 +1912,27 @@ void handleTimers(int cpuCycles)
 
         if (g_pBus->map.ioregs.timers.TAC.enable)
         {
-            bool bitIsCurrentlySet = g_cpu.divCounter & (1 << bitPos);
-
-            if (bitIsCurrentlySet)
-            {
-                __asm("nop");
-            }
+            bool signalNow = g_pBus->map.ioregs.timers.TAC.enable && (g_cpu.divCounter & (1 << bitPos));
 
             // check if we have a falling edge
-            if (!bitIsCurrentlySet && previousBitValues[g_pBus->map.ioregs.timers.TAC.clockSelect])
+            if (!signalNow && g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect])
             {
                 g_pBus->map.ioregs.timers.TIMA++;
             }
 
             if (g_pBus->map.ioregs.timers.TIMA == 0x00)
             {
-                g_pBus->map.ioregs.timers.TIMA    = g_pBus->map.ioregs.timers.TMA;
-                g_pBus->map.ioregs.intFlags.timer = 1;
+                remainingCyclesTIMAReset--;
+
+                if (remainingCyclesTIMAReset == 0)
+                {
+                    g_pBus->map.ioregs.timers.TIMA    = g_pBus->map.ioregs.timers.TMA;
+                    g_pBus->map.ioregs.intFlags.timer = 1;
+                    remainingCyclesTIMAReset = 4;
+                }
             }
 
-            previousBitValues[g_pBus->map.ioregs.timers.TAC.clockSelect] = bitIsCurrentlySet;
+           g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect] = signalNow;
         }
     }
 
@@ -1987,4 +1995,5 @@ static void bootromUnmapCallback(uint8_t data, uint16_t addr)
 static void divWriteCallback(uint8_t data, uint16_t addr)
 {
     g_cpu.divCounter = 0;
+    memset(g_cpu.timaPreviousSignalLevels, 0, 4);
 }

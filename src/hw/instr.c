@@ -10,6 +10,7 @@
  */
 #include "instr.h"
 
+#include "cpu.h"
 #include "mem.h"
 
 #include <stdio.h>

@@ -78,6 +78,12 @@ typedef union __attribute__((__packed__))
     uint8_t  reg8_arr[12];
 } SCPURegisters_t;
 
+typedef struct
+{
+    uint8_t programCounterSteps;
+    uint8_t mCyclesExecuted;
+} SCPUExecuteReturnState_t;
+
 // functions
 /**
  * @brief reset cpu to initial state
@@ -130,14 +136,16 @@ void setIME();
 void resetIME();
 bool checkIME();
 
+bool checkDelayedIMELatch();
+bool resetDelayedIMELatch();
+
 bool checkHalted();
 bool checkStopped();
 
 /**
  * @brief map instruction to actual decoding function
- * @return total execution cycles used for the last instruction
  */
-int  executeInstruction(uint8_t);
+SCPUExecuteReturnState_t executeInstruction(uint8_t);
 
 int  handleInterrupts(void);
 
