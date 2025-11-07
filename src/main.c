@@ -41,7 +41,7 @@ int main()
 
     //runTests();
 
-    bool skipBootrom               = false;
+    bool skipBootrom               = true;
     bool imePrev                   = false;
     bool frameComplete             = false;
 

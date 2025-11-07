@@ -69,3 +69,6 @@ roms
 mts
 src/instructions
 tests
+
+# gameboy-doctor
+.log

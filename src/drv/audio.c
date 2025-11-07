@@ -32,7 +32,7 @@ void initAudio()
     }
 
     SDL_AudioSpec desired, obtained;
-    desired.freq     = 44100;
+    desired.freq     = 22050;
     desired.format   = AUDIO_S16SYS;
     desired.channels = 1;
     desired.samples  = 2048;

@@ -39,14 +39,17 @@
 
 #define NUM_APU_CHANNELS         (4)
 
-#define WAVE_PATTERN_RAM_START   (0xFF30)
-#define WAVE_PATTERN_RAM_END     (0xFF3F)
+#define WAVETABLE_START   (0xFF30)
+#define WAVETABLE_END     (0xFF3F)
+
+#define WAVETABLE_ENTRIES ((WAVETABLE_END - WAVETABLE_START + 1) * 2) // wavetable contains nibbles
 
 #define PULSE_TIMER_PERIOD(freq) (((2048 - (freq))))
-#define WAVE_TIMER_PERIOD(freq)  (((2048 - (freq)) * 2))
+#define WAVE_TIMER_PERIOD(freq)  (((2048 - (freq)) / 2))
 
-#define SDL_SAMPLE_RATE          44100
+#define SDL_SAMPLE_RATE          22050
 #define APU_CLOCK                (CPU_CLOCK_SPEED_HZ / 4)
+#define APU_CYCLES_PER_SAMPLE    (float)((float)APU_CLOCK / (float)SDL_SAMPLE_RATE)
 
 #define SAMPLE_BUFFER_SIZE       2048
 
@@ -84,7 +87,7 @@ typedef struct
 {
     bool                              active;
 
-    uint8_t                           volumeShift;
+    uint8_t                           volume;
     uint32_t                          sampleIndex;
     int32_t                           samplePeriod;
     int32_t                           lengthCounter;
@@ -424,36 +427,14 @@ static void triggerPulseChannel(size_t num)
 
 static void tickWaveChannel(size_t cycles)
 {
-    switch (g_currentAPUState.ch3.pNR32->outputLevel)
-    {
-        case 0:
-        {
-            g_currentAPUState.ch3.volumeShift = 0xF;
-            break;
-        }
-        case 1:
-        {
-            g_currentAPUState.ch3.volumeShift = 0;
-            break;
-        }
-        case 2:
-        {
-            g_currentAPUState.ch3.volumeShift = 1;
-            break;
-        }
-        case 3:
-        {
-            g_currentAPUState.ch3.volumeShift = 2;
-            break;
-        }
-    }
+    g_currentAPUState.ch3.volume = g_currentAPUState.ch3.pNR32->outputLevel;
 
     g_currentAPUState.ch3.samplePeriod -= cycles;
 
     while (g_currentAPUState.ch3.samplePeriod <= 0)
     {
         g_currentAPUState.ch3.samplePeriod += WAVE_TIMER_PERIOD(getWaveFreqValue());
-        g_currentAPUState.ch3.sampleIndex = (g_currentAPUState.ch3.sampleIndex + 1) & 0x07;
+        if (++g_currentAPUState.ch3.sampleIndex == WAVETABLE_ENTRIES) { g_currentAPUState.ch3.sampleIndex = 0; }
     }
 
     g_currentAPUState.ch3.lengthCounter = 256 - *g_currentAPUState.ch3.pNR31;
@@ -631,21 +612,19 @@ static inline uint16_t getWaveFreqValue()
  */
 void updateSampleBuffer(size_t cycles)
 {
-    static double sampleCounter   = 0.0;
-    const double  cyclesPerSample = (double)APU_CLOCK / (double)SDL_SAMPLE_RATE;
-    static float  prev            = 0.0f;
+    static float sampleCounter   = 0;
 
-    sampleCounter += (double)cycles;
+    sampleCounter += (float)cycles;
 
-    while (sampleCounter >= cyclesPerSample)
+    while (sampleCounter >= APU_CYCLES_PER_SAMPLE)
     {
-        sampleCounter -= cyclesPerSample;
+        sampleCounter -= APU_CYCLES_PER_SAMPLE;
 
         int16_t mix = 0;
 
         if (g_currentAPUState.audioControl.pNR52->audioMasterEnable)
         {
-            if (g_currentAPUState.ch1.active)
+            if (g_currentAPUState.ch1.active && (g_currentAPUState.ch1.lengthCounter > 0))
             {
                 int16_t s =
                 sc_dutyWaveforms[g_currentAPUState.ch1.pNRx1->waveDuty][g_currentAPUState.ch1.waveformIndex] ?
@@ -653,7 +632,7 @@ void updateSampleBuffer(size_t cycles)
                 -(int16_t)g_currentAPUState.ch1.volume;
                 mix += s * 200;
             }
-            if (g_currentAPUState.ch2.active)
+            if (g_currentAPUState.ch2.active && (g_currentAPUState.ch2.lengthCounter > 0))
             {
                 int16_t s =
                 sc_dutyWaveforms[g_currentAPUState.ch2.pNRx1->waveDuty][g_currentAPUState.ch2.waveformIndex] ?
@@ -661,10 +640,27 @@ void updateSampleBuffer(size_t cycles)
                 -(int16_t)g_currentAPUState.ch2.volume;
                 mix += s * 200;
             }
-            if (g_currentAPUState.ch3.active)
+            if (g_currentAPUState.ch3.active && (g_currentAPUState.ch3.lengthCounter > 0))
             {
-                mix += (*(uint8_t *)&g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2] &
-                       (0xF << g_currentAPUState.ch3.sampleIndex % 2)) >> g_currentAPUState.ch3.volumeShift;
+                uint8_t byte = g_pBus->map.ioregs.wavetable[g_currentAPUState.ch3.sampleIndex / 2];
+                int16_t sample;
+                if (g_currentAPUState.ch3.sampleIndex % 2 == 0)
+                {
+                    sample = byte >> 4;
+                }
+                else
+                {
+                    sample = byte & 0x0F;
+                }
+
+                if (g_currentAPUState.ch3.volume != 0)
+                {
+                    // signed PCM conversion
+                    sample -= 8;
+                    sample >>= (g_currentAPUState.ch3.volume ? g_currentAPUState.ch3.volume - 1 : 0);
+
+                    mix += sample * 200; // scale like pulse
+                }
             }
             if (g_currentAPUState.ch4.active)
             {
@@ -717,7 +713,7 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
                 g_currentAPUState.ch3.active        = false;
                 g_currentAPUState.ch3.sampleIndex   = 0;
                 g_currentAPUState.ch3.lengthCounter = 0;
-                g_currentAPUState.ch3.volumeShift   = 0;
+                g_currentAPUState.ch3.volume        = 0;
             }
             if ((g_previousAPUState.audioControl.pNR52->ch4Enable !=
                  g_currentAPUState.audioControl.pNR52->ch4Enable) &&
@@ -752,7 +748,7 @@ static void audioControlRegisterCallback(uint8_t data, uint16_t addr)
         }
         case AUDIO_CH3_CONTROL_ADDR:
         {
-            g_currentAPUState.ch1.pNRx4->lengthEnable = (data >> 6) & 1;
+            g_currentAPUState.ch3.pNR34->lengthEnable = (data >> 6) & 1;
             *(uint8_t *)g_currentAPUState.ch3.pNR34   = data & 0x7F;
             if (isTrigger)
             {
