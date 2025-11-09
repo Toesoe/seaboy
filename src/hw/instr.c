@@ -20,6 +20,8 @@ static SCPURegisters_t *g_pCPURegisters;
 
 #define CHECK_HALF_CARRY_ADD8(a, b)  ((((a) & 0xF) + ((b) & 0xF)) & 0x10)
 #define CHECK_HALF_CARRY_SUB8(a, b)  ((((a) & 0xF) - ((b) & 0xF)) & 0x10)
+#define CHECK_HALF_CARRY_ADC8(a, b, c)  ((((a) & 0xF) + ((b) & 0xF) + ((c) & 0xF)) & 0x10)
+#define CHECK_HALF_CARRY_SBC8(a, b, c)  ((((a) & 0xF) - ((b) & 0xF) - ((c) & 0xF)) & 0x10)
 
 #define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xFFF) + ((b) & 0xFFF)) & 0x1000) == 0x1000)
 #define CHECK_HALF_CARRY_SUB16(a, b) (((a) & 0xFFF) < ((b) & 0xFFF))
@@ -170,10 +172,11 @@ void add8_a_n(uint8_t val)
 void adc8_a_n(uint8_t val)
 {
     uint16_t sum = g_pCPURegisters->reg8.a + val + testFlag(FLAG_C);
+    uint8_t  carryFlag = testFlag(FLAG_C) ? 1 : 0;
 
     (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     (sum & 0xFF) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-    CHECK_HALF_CARRY_ADD8(g_pCPURegisters->reg8.a, val + testFlag(FLAG_C)) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_ADC8(g_pCPURegisters->reg8.a, val, carryFlag) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     resetFlag(FLAG_N);
 
@@ -201,7 +204,7 @@ void sbc8_a_n(uint8_t val)
 
     (result < 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     ((uint8_t)result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-    CHECK_HALF_CARRY_SUB8(g_pCPURegisters->reg8.a, val + carry) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_SBC8(g_pCPURegisters->reg8.a, val,  carry) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     setFlag(FLAG_N);
 
@@ -317,13 +320,28 @@ void add16_hl_n(uint16_t val)
     setRegister16(HL, (uint16_t)sum);
 }
 
-void add16_sp_n(uint16_t val)
+void add16_sp_n(int16_t val)
 {
-    uint32_t sum = g_pCPURegisters->reg16.sp + val;
-    (sum > UINT16_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    int32_t sum = g_pCPURegisters->reg16.sp + val;
+
+    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF)+ (uint8_t)val) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    CHECK_HALF_CARRY_ADD8((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF), val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     resetFlag(FLAG_N);
+    resetFlag(FLAG_Z);
     setRegister16(SP, (uint16_t)sum);
+}
+
+void ldhl_sp_n(int16_t offset)
+{
+    int32_t sum = g_pCPURegisters->reg16.sp + offset;
+
+    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF)+ (uint8_t)offset) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    CHECK_HALF_CARRY_ADD8((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF), offset) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+
+    resetFlag(FLAG_N);
+    resetFlag(FLAG_Z);
+    setRegister16(HL, (uint16_t)sum);
 }
 
 void inc16_reg(Register16 reg)
@@ -779,12 +797,13 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
     uint8_t hi = pCurrentInstruction->instruction >> 4;
     uint8_t lo = pCurrentInstruction->instruction & 15;
 
+    pCurrentInstruction->programCounterSteps = 1;
+
     // main instruction decode loop
     switch (pCurrentInstruction->instruction)
     {
         case 0x00: // NOP
         {
-            pCurrentInstruction->programCounterSteps = 1;
             pCurrentInstruction->mCyclesExecuted     += 1;
             break;
         }
@@ -1395,7 +1414,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             pCurrentInstruction->mCyclesExecuted     += 1;
             pCurrentInstruction->programCounterSteps = 1;
-            setHalted();
+            setHaltRequested();
             break;
         }
 
@@ -1549,8 +1568,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
 
         case 0xE8: // ADD SP, s8
         {
-            setRegister16(SP,
-                          fetch8(pGetCPURegisters()->reg16.sp + ((int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1))));
+            add16_sp_n((int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
             pCurrentInstruction->mCyclesExecuted     += 4;
             break;
@@ -1566,7 +1584,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
 
         case 0xF8: // LD HL, SP+s8
         {
-            setRegister16(HL, pGetCPURegisters()->reg16.sp + (int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1));
+            ldhl_sp_n((int8_t)fetch8((pGetCPURegisters()->reg16.pc + 1)));
             pCurrentInstruction->programCounterSteps = 2;
             pCurrentInstruction->mCyclesExecuted     += 3;
             break;
@@ -1909,7 +1927,12 @@ static uint8_t _rlc(uint8_t val)
     if (val & 0x80)
     {
         setFlag(FLAG_C);
-    } // get bit 7 of previous value
+    }
+    else
+    {
+        resetFlag(FLAG_C);
+    }
+
     uint8_t ret = (val << 1) | testFlag(FLAG_C);
 
     if (ret == 0)
@@ -1938,7 +1961,11 @@ static uint8_t _sla(uint8_t val)
     if (val & 0x80)
     {
         setFlag(FLAG_C);
-    } // get bit 7 of previous value
+    }
+    else
+    {
+        resetFlag(FLAG_C);
+    }
     uint8_t ret = val << 1;
 
     if (ret == 0)
@@ -1996,9 +2023,13 @@ static uint8_t _rrc(uint8_t val)
     {
         setFlag(FLAG_C);
     }
+    else
+    {
+        resetFlag(FLAG_C);
+    }
 
     // get bit 7 of previous value
-    uint8_t ret = (val << 1) | (testFlag(FLAG_C) >> 7);
+    uint8_t ret = (val >> 1) | (testFlag(FLAG_C) << 7);
 
     if (ret == 0)
     {
@@ -2022,14 +2053,19 @@ static uint8_t _sra(uint8_t val)
 {
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
+
     uint8_t bit7 = val & 0x80;
-    val &= ~0x80; // unset bit 7
+
     if (val & 0x01)
     {
         setFlag(FLAG_C);
-    } // get bit 0 of previous value
+    }
+    else
+    {
+        resetFlag(FLAG_C);
+    }
 
-    uint8_t ret = (val >> 1) | (bit7 << 7);
+    uint8_t ret = (val >> 1) | bit7;
 
     if (ret == 0)
     {
@@ -2043,6 +2079,12 @@ static uint8_t _sra(uint8_t val)
     return ret;
 }
 
+/**
+ * @brief shift right logical: >>1, bit 7 is 0, bit 0 to carry
+ * 
+ * @param val 
+ * @return uint8_t 
+ */
 static uint8_t _srl(uint8_t val)
 {
     resetFlag(FLAG_N);
@@ -2051,7 +2093,11 @@ static uint8_t _srl(uint8_t val)
     if (val & 0x01)
     {
         setFlag(FLAG_C);
-    } // get bit 0 of previous value
+    }
+    else
+    {
+        resetFlag(FLAG_C);
+    }
     uint8_t ret = val >> 1;
 
     if (ret == 0)

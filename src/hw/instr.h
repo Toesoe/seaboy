@@ -102,12 +102,6 @@ void ld_reg16_imm(Register16);
 void ld_addr_imm16(uint16_t);
 
 /**
- * @brief set HL register to SP + an offfset
- *
- */
-void ldhl_sp_offset(uint8_t);
-
-/**
  * @brief push a specific register onto the stack
  *
  */
@@ -135,7 +129,9 @@ void dec8_mem(uint16_t);
 
 void add16_hl_n(uint16_t);
 void dec16_hl_n(uint16_t);
-void add16_sp_n(uint16_t);
+void add16_sp_n(int16_t);
+void add8_sp_n(int8_t);
+void ldhl_sp_n(int16_t);
 void inc16_reg(Register16);
 void dec16_reg(Register16);
 

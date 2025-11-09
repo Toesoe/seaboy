@@ -43,7 +43,7 @@ int main()
 
     uint32_t cycleCounter          = 0;
 
-    initializeBus(pLoadRom("roms/Tetris.gb"), skipBootrom);
+    initializeBus(pLoadRom("roms/11-op a,(hl).gb"), skipBootrom);
 
     pBus = pGetAddressBus();
     pCpu = pGetCPURegisters();
@@ -65,19 +65,8 @@ int main()
 
     uint8_t delayedIMECounter = 0;
 
-#ifdef GB_DOCTOR
-    FILE *f = fopen("gb.log", "w");
-#endif
-
     while (true)
     {
-        // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
-#ifdef GB_DOCTOR
-        fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
-                pCpu->reg8.a, pCpu->reg8.f, pCpu->reg8.b, pCpu->reg8.c, pCpu->reg8.d, pCpu->reg8.e, pCpu->reg8.h, pCpu->reg8.l,
-                pCpu->reg16.sp, pCpu->reg16.pc, fetch8(pCpu->reg16.pc), fetch8(pCpu->reg16.pc+1), fetch8(pCpu->reg16.pc+2), fetch8(pCpu->reg16.pc+3));
-#endif
-
         // interrupt handling - fetch - decode - execute + timers
         mCyclesCurrentLoop = stepCPU();
         cycleCounter += mCyclesCurrentLoop;

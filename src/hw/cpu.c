@@ -24,12 +24,23 @@
 #define DIV_REGISTER_UPDATE_RATE_HZ  (16384)
 #define DIV_REGISTER_TICK_INTERVAL   (CPU_CLOCK_SPEED_HZ / DIV_REGISTER_UPDATE_RATE_HZ)
 
+typedef enum
+{
+    HALT_MODE_NONE,
+    HALT_MODE_NORMAL,
+    HALT_MODE_CONTINUE_WITHOUT_CALLING_ISR,
+    HALT_MODE_SKIP_NEXT_INSTRUCTION_PC
+} EHaltMode_t;
+
 typedef struct
 {
     SCPURegisters_t registers;
     bool interruptMasterEnable;
     bool delayedIMELatch;
-    bool isHalted;  // HALT
+    bool haltRequested;
+    EHaltMode_t haltModeRequest;  // HALT
+    EHaltMode_t haltModeCurrent;
+    bool stopRequested;
     bool isStopped; // STOP
 
     uint8_t  delayedIMECounter;
@@ -50,6 +61,10 @@ static void   cpuSkipBootrom(void);
 static void   bootromUnmapCallback(uint8_t, uint16_t);
 static void   divWriteCallback(uint8_t, uint16_t);
 
+#ifdef GB_DOCTOR
+    FILE *f;
+#endif
+
 /**
  * @brief reset g_cpu.registers to initial state
  */
@@ -67,6 +82,10 @@ void resetCpu(bool skipBootrom)
 
     registerAddressCallback(BOOT_ROM_MAPPER_CONTROL_ADDR, BOOTROM_UNMAP_CALLBACK, bootromUnmapCallback);
     registerAddressCallback(DIVIDER_ADDR, DIV_CALLBACK, divWriteCallback);
+
+#ifdef GB_DOCTOR
+    f = fopen("gb.log", "w");
+#endif
 }
 
 /**
@@ -166,19 +185,46 @@ bool checkDelayedIMELatch()
     return g_cpu.delayedIMELatch;
 }
 
+void setHaltRequested()
+{
+    g_cpu.haltRequested = true;
+    if (g_cpu.interruptMasterEnable)
+    {
+        g_cpu.haltModeRequest = HALT_MODE_NORMAL;
+    }
+    else
+    {
+        if (*(uint8_t *)&pGetAddressBus()->map.ioregs.intFlags & *(uint8_t *)&pGetAddressBus()->map.interruptEnable & 0x1F)
+        {
+            // HALT bug 1: don't increment PC (eg execute next instruction twice)
+            g_cpu.haltModeRequest = HALT_MODE_SKIP_NEXT_INSTRUCTION_PC;
+        }
+        else
+        {
+            // HALT bug 2
+            g_cpu.haltModeRequest = HALT_MODE_CONTINUE_WITHOUT_CALLING_ISR;
+        }
+    }
+}
+
 void setHalted()
 {
-    g_cpu.isHalted = true;
+    g_cpu.haltModeRequest = HALT_MODE_NORMAL;
 }
 
 void resetHalted()
 {
-    g_cpu.isHalted = false;
+    g_cpu.haltModeCurrent = HALT_MODE_NONE;
 }
 
 bool checkHalted()
 {
-    return g_cpu.isHalted;
+    return g_cpu.haltModeCurrent == HALT_MODE_NORMAL;
+}
+
+void setStopRequested()
+{
+    g_cpu.stopRequested = true;
 }
 
 void setStopped()
@@ -227,9 +273,20 @@ size_t stepCPU()
 {
     SCPUCurrentCycleState_t thisCycle = { 0 };
 
-    thisCycle.mCyclesExecuted = handleInterrupts();
+#ifdef GB_DOCTOR
+        fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
+                g_cpu.registers.reg8.a, g_cpu.registers.reg8.f, g_cpu.registers.reg8.b, g_cpu.registers.reg8.c, g_cpu.registers.reg8.d, g_cpu.registers.reg8.e, g_cpu.registers.reg8.h, g_cpu.registers.reg8.l,
+                g_cpu.registers.reg16.sp, g_cpu.registers.reg16.pc, fetch8(g_cpu.registers.reg16.pc), fetch8(g_cpu.registers.reg16.pc+1), fetch8(g_cpu.registers.reg16.pc+2), fetch8(g_cpu.registers.reg16.pc+3));
+#endif
 
-    if (!checkHalted() || !checkStopped())
+    thisCycle.mCyclesExecuted += handleInterrupts();
+
+    if (g_cpu.haltModeCurrent == HALT_MODE_SKIP_NEXT_INSTRUCTION_PC)
+    {
+        g_cpu.haltModeCurrent = HALT_MODE_NONE;
+    }
+
+    if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && !g_cpu.isStopped)
     {
         // fetch-decode-execute
         thisCycle.instruction = fetch8(g_cpu.registers.reg16.pc);
@@ -237,6 +294,23 @@ size_t stepCPU()
     }
 
     handleTimers(thisCycle.mCyclesExecuted * 4);
+
+    if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && (g_cpu.haltModeCurrent != HALT_MODE_SKIP_NEXT_INSTRUCTION_PC) && !g_cpu.isStopped)
+    {
+        incrementProgramCounter(thisCycle.programCounterSteps);
+    }
+
+    if (g_cpu.haltRequested)
+    {
+        g_cpu.haltModeCurrent = g_cpu.haltModeRequest;
+        g_cpu.haltRequested = false;
+    }
+
+    if (g_cpu.stopRequested)
+    {
+        g_cpu.isStopped = true;
+        g_cpu.stopRequested = false;
+    }
 
     if (checkDelayedIMELatch())
     {
@@ -248,25 +322,21 @@ size_t stepCPU()
         }
     }
 
-    if (!checkHalted())
-    {
-        incrementProgramCounter(thisCycle.programCounterSteps);
-    }
-
     return thisCycle.mCyclesExecuted;
 }
 
 static size_t handleInterrupts(void)
 {
+    EHaltMode_t prevHaltMode = g_cpu.haltModeCurrent;
     bool fired = false;
     bool intPending = (*(uint8_t *)&g_pBus->map.interruptEnable & *(uint8_t *)&g_pBus->map.ioregs.intFlags);
 
-    if (g_cpu.isHalted && intPending)
+    if ((g_cpu.haltModeCurrent != HALT_MODE_NONE) && intPending)
     {
-        g_cpu.isHalted = false; // wake CPU
+        g_cpu.haltModeCurrent = HALT_MODE_NONE; // wake CPU
     }
 
-    if (g_cpu.interruptMasterEnable && intPending)
+    if (g_cpu.interruptMasterEnable && (prevHaltMode != HALT_MODE_CONTINUE_WITHOUT_CALLING_ISR) && intPending)
     {
         if (g_pBus->map.interruptEnable.vblank && g_pBus->map.ioregs.intFlags.vblank)
         {

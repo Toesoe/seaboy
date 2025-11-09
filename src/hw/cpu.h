@@ -142,10 +142,12 @@ void setDelayedIMELatch();
 void resetDelayedIMELatch();
 bool checkDelayedIMELatch();
 
+void setHaltRequested();
 void setHalted();
 void resetHalted();
 bool checkHalted();
 
+void setStopRequested();
 void setStopped();
 void resetStopped();
 bool checkStopped();

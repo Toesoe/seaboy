@@ -79,10 +79,10 @@ void initializeBus(const SCartridge_t *pCartridge, bool skipBootrom)
     assert(pCartridge != nullptr);
 
     memset(&g_bus, 0x00, sizeof(g_bus));
-    memset(&g_bus.map.hram, 0xFF, HRAM_SIZE);
-    memset(&g_bus.map.wram, 0xFF, WRAM_SIZE);
-    memset(&g_bus.map.echo, 0xFF, ECHO_SIZE);
-    memset(&g_bus.map.vram, 0xFF, VRAM_SIZE);
+    memset(&g_bus.map.hram, 0x00, HRAM_SIZE);
+    memset(&g_bus.map.wram, 0x00, WRAM_SIZE);
+    memset(&g_bus.map.echo, 0x00, ECHO_SIZE);
+    memset(&g_bus.map.vram, 0x00, VRAM_SIZE);
     memset(&g_bus.map.oam, 0x00, OAM_SIZE);
     memset(&g_bus.map.ioregs.joypad, 0xFF, 1);
 
