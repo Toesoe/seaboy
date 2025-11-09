@@ -13,6 +13,7 @@
 #include "cpu.h"
 #include "mem.h"
 
+#include <assert.h>
 #include <stdio.h>
 
 static SCPURegisters_t *g_pCPURegisters;
@@ -32,7 +33,10 @@ static uint8_t _rrc(uint8_t val);
 static uint8_t _sra(uint8_t val);
 static uint8_t _srl(uint8_t val);
 
-void instrSetCpuPtr(SCPURegisters_t *pCpuSet)
+static size_t  decodeAndExecuteCBPrefix(void);
+static size_t  getRegIndexByOpcodeNibble(uint8_t);
+
+void           instrSetCpuPtr(SCPURegisters_t *pCpuSet)
 {
     g_pCPURegisters = pCpuSet;
 }
@@ -770,6 +774,1099 @@ bool ret_cond(Flag flag, bool testSet)
     return retval;
 }
 
+void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
+{
+    uint8_t hi = pCurrentInstruction->instruction >> 4;
+    uint8_t lo = pCurrentInstruction->instruction & 15;
+
+    // main instruction decode loop
+    switch (pCurrentInstruction->instruction)
+    {
+        case 0x00: // NOP
+        {
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            break;
+        }
+        case 0x01: // LD BC,d16
+        case 0x11: // LD DE,d16
+        case 0x21: // LD HL,d16
+        case 0x31: // LD SP,d16
+        {
+            ld_reg16_imm(BC + hi); // use high nibble
+            pCurrentInstruction->programCounterSteps = 3;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0x02: // LD (BC),A
+        case 0x12: // LD (DE),A
+        {
+            Register16 reg = BC + hi; // use high nibble
+            ld_addr_reg8(pGetCPURegisters()->reg16_arr[reg], A);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0x22: // LD (HL+),A
+        {
+            pCurrentInstruction->mCyclesExecuted += 2;
+            ld_addr_reg8(pGetCPURegisters()->reg16.hl, A);
+            inc16_reg(HL);
+            break;
+        }
+        case 0x32: // LD (HL-),A
+        {
+            pCurrentInstruction->mCyclesExecuted += 2;
+            ld_addr_reg8(pGetCPURegisters()->reg16.hl, A);
+            dec16_reg(HL);
+            break;
+        }
+        case 0x06: // LD B,d8
+        {
+            ld_reg8_imm(B);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x16: // LD D,d8
+        {
+            ld_reg8_imm(D);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x26: // LD H,d8
+        {
+            ld_reg8_imm(H);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x36: // LD (HL),d8
+        {
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            ld_addr_imm8(pGetCPURegisters()->reg16.hl);
+            break;
+        }
+        case 0x0A: // LD A,(BC)
+        {
+            ld_reg8_addr(A, pGetCPURegisters()->reg16.bc);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0x1A: // LD A,(DE)
+        {
+            ld_reg8_addr(A, pGetCPURegisters()->reg16.de);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0x2A: // LD A,(HL+)
+        {
+            ld_reg8_addr(A, pGetCPURegisters()->reg16.hl);
+            inc16_reg(HL);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0x3A: // LD A,(HL-)
+        {
+            ld_reg8_addr(A, pGetCPURegisters()->reg16.hl);
+            dec16_reg(HL);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0x0E: // LD C,d8
+        {
+            ld_reg8_imm(C);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x1E: // LD E,d8
+        {
+            ld_reg8_imm(E);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x2E: // LD L,d8
+        {
+            ld_reg8_imm(L);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0x3E: // LD A,d8
+        {
+            ld_reg8_imm(A);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+        case 0xE2: // LD (0xFF00 + C),A
+        {
+            pCurrentInstruction->mCyclesExecuted += 2;
+            ld_addr_reg8(0xFF00 + pGetCPURegisters()->reg8.c, A);
+            break;
+        }
+        case 0xF2: // LD A, (0xFF00 + C)
+        {
+            ld_reg8_addr(A, 0xFF00 + pGetCPURegisters()->reg8.c);
+            pCurrentInstruction->mCyclesExecuted += 2;
+            break;
+        }
+        case 0xE0: // LDH (a8), A (load from A to to 0xFF00+8-bit imm unsigned)
+        {
+            ld_addr_reg8(0xFF00 + fetch8(pGetCPURegisters()->reg16.pc + 1), A);
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
+        {
+            ld_reg8_addr(A, 0xFF00 + fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0xEA: // LD (a16), A (load from A to addr)
+        {
+            ld_addr_reg8(fetch16(pGetCPURegisters()->reg16.pc + 1), A);
+            pCurrentInstruction->programCounterSteps = 3;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xFA: // LD A, (a16) (load from addr to A)
+        {
+            ld_reg8_addr(A, fetch16(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 3;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0x0C: // INC C
+        case 0x0D: // DEC C
+        {
+            if (lo == 0x0C)
+            {
+                inc8_reg(C);
+            }
+            else
+            {
+                dec8_reg(C);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x1C: // INC E
+        case 0x1D: // DEC E
+        {
+            if (lo == 0x0C)
+            {
+                inc8_reg(E);
+            }
+            else
+            {
+                dec8_reg(E);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x2C: // INC L
+        case 0x2D: // DEC L
+        {
+            if (lo == 0x0C)
+            {
+                inc8_reg(L);
+            }
+            else
+            {
+                dec8_reg(L);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x3C: // INC A
+        case 0x3D: // DEC A
+        {
+            if (lo == 0x0C)
+            {
+                inc8_reg(A);
+            }
+            else
+            {
+                dec8_reg(A);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            ;
+            break;
+        }
+        case 0x04: // INC B
+        case 0x05: // DEC B
+        {
+            if (lo == 0x04)
+            {
+                inc8_reg(B);
+            }
+            else
+            {
+                dec8_reg(B);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x14: // INC D
+        case 0x15: // DEC D
+        {
+            if (lo == 0x04)
+            {
+                inc8_reg(D);
+            }
+            else
+            {
+                dec8_reg(D);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x24: // INC H
+        case 0x25: // DEC H
+        {
+            if (lo == 0x04)
+            {
+                inc8_reg(H);
+            }
+            else
+            {
+                dec8_reg(H);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x34: // INC (HL)
+        case 0x35: // DEC (HL)
+        {
+            if (lo == 0x04)
+            {
+                inc8_mem(pGetCPURegisters()->reg16.hl);
+            }
+            else
+            {
+                dec8_mem(pGetCPURegisters()->reg16.hl);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x03: // INC BC
+        case 0x13: // INC DE
+        case 0x23: // INC HL
+        case 0x33: // INC SP
+        case 0x0B: // DEC BC
+        case 0x1B: // DEC DE
+        case 0x2B: // DEC HL
+        case 0x3B: // DEC SP
+        {
+            Register16 reg = BC + hi; // use high nibble
+            if (lo == 0x03)
+            {
+                inc16_reg(reg);
+            }
+            else
+            {
+                dec16_reg(reg);
+            }
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x07: // RLCA (rotate left circular A)
+        {
+            rlca();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x17: // RLA (rotate left through carry A)
+        {
+            rla();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x0F: // RRCA (rotate right circular A)
+        {
+            rrca();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0x1F: // RRA (rotate right through carry A)
+        {
+            rra();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+        case 0xCB: // CB-prefixed
+        {
+            pCurrentInstruction->mCyclesExecuted     += 2 + decodeAndExecuteCBPrefix(); // all CB's use at least 2 cycles
+            pCurrentInstruction->programCounterSteps = 2; // CB doesn't take immediates, always 2 bytes
+            break;
+        }
+
+            // JUMP instructions
+            // for JUMPs we do not increment the current PC after the loop!
+
+        case 0x18: // JR s8: relative jump
+        {
+            jr_imm8();
+            pCurrentInstruction->programCounterSteps = 0;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0x20: // JR NZ,s8
+        case 0x28: // JR Z,s8
+        {
+            pCurrentInstruction->mCyclesExecuted += 2;
+            if (jr_imm8_cond(FLAG_Z, (lo == 0x8 ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted++;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 2;
+            }
+            break;
+        }
+        case 0x30: // JR NC,s8
+        case 0x38: // JR C,s8
+        {
+            pCurrentInstruction->mCyclesExecuted += 2;
+            if (jr_imm8_cond(FLAG_C, (lo == 0x8 ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted++;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 2;
+            }
+            break;
+        }
+        case 0xC3: // JP a16
+        {
+            jmp_imm16();
+            pCurrentInstruction->programCounterSteps = 0;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xC2: // JP NZ,a16
+        case 0xCA: // JP Z,a16
+        {
+            pCurrentInstruction->mCyclesExecuted += 3;
+            if (jmp_imm16_cond(FLAG_Z, (lo == 0xA ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted++;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 3;
+            }
+            break;
+        }
+        case 0xD2: // JP NC,a16
+        case 0xDA: // JP C,a16
+        {
+            pCurrentInstruction->mCyclesExecuted += 3;
+            if (jmp_imm16_cond(FLAG_C, (lo == 0xA ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted++;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 3;
+            }
+            break;
+        }
+
+        case 0xE9: // JP HL
+        {
+            jmp_hl();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 0;
+            break;
+        }
+
+            // CALL instructions
+
+        case 0xC4: // CALL NZ,a16
+        case 0xCC: // CALL Z,a16
+        {
+            pCurrentInstruction->mCyclesExecuted += 3;
+            if (call_imm16_cond(FLAG_Z, (lo == 0xC ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted += 3;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 3;
+            }
+            break;
+        }
+        case 0xD4: // CALL NC,a16
+        case 0xDC: // CALL C,a16
+        {
+            pCurrentInstruction->mCyclesExecuted += 3;
+            if (call_imm16_cond(FLAG_C, (lo == 0xC ? true : false)))
+            {
+                pCurrentInstruction->mCyclesExecuted += 3;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->programCounterSteps = 3;
+            }
+            break;
+        }
+        case 0xCD: // CALL a16
+        {
+            pCurrentInstruction->mCyclesExecuted     += 6;
+            pCurrentInstruction->programCounterSteps = 0;
+            call_imm16();
+            break;
+        }
+
+            // POP instructions
+
+        case 0xC1: // POP BC
+        {
+            pop_reg16(BC);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0xD1: // POP DE
+        {
+            pop_reg16(DE);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0xE1: // POP HL
+        {
+            pop_reg16(HL);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+        case 0xF1: // POP AF
+        {
+            pop_reg16(AF);
+            // zero unused nibble of flags register
+            setRegister8(F, pGetCPURegisters()->reg8.f & 0xF0);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+
+            // PUSH instructions
+
+        case 0xC5: // PUSH BC
+        {
+            push_reg16(BC);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xD5: // PUSH DE
+        {
+            push_reg16(DE);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xE5: // PUSH HL
+        {
+            push_reg16(HL);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xF5: // PUSH AF
+        {
+            push_reg16(AF);
+            pCurrentInstruction->programCounterSteps = 1;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+
+        // RET instructions
+        case 0xC9: // RET
+        {
+            ret();
+            pCurrentInstruction->programCounterSteps = 0;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+        case 0xD9: // RETI
+        {
+            setIME();
+            ret();
+            pCurrentInstruction->programCounterSteps = 0;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+
+        case 0xC0: // RET NZ
+        {
+            if (!testFlag(FLAG_Z))
+            {
+                ret();
+                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->programCounterSteps = 1;
+            }
+            break;
+        }
+
+        case 0xC8: // RET Z
+        {
+            if (testFlag(FLAG_Z))
+            {
+                ret();
+                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->programCounterSteps = 1;
+            }
+            break;
+        }
+
+        case 0xD0: // RET NC
+        {
+            if (!testFlag(FLAG_C))
+            {
+                ret();
+                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->programCounterSteps = 1;
+            }
+            break;
+        }
+
+        case 0xD8: // RET C
+        {
+            if (testFlag(FLAG_C))
+            {
+                ret();
+                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->programCounterSteps = 0;
+            }
+            else
+            {
+                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->programCounterSteps = 1;
+            }
+            break;
+        }
+
+        case 0x76: // HALT
+        {
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            setHalted();
+            break;
+        }
+
+        case 0x10: // STOP
+        {
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 1;
+            setStopped();
+            resetIME();
+            write8(0, DIVIDER_ADDR); // set DIV to 0
+            break;
+        }
+
+        case 0x27: // DAA
+        {
+            daa();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0x2F: // CPL
+        {
+            cpl();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0x3F: // CCF
+        {
+            ccf();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0x37: // SCF
+        {
+            scf();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0xF3: // DI
+        {
+            resetIME();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0xFB: // EI
+        {
+            setDelayedIMELatch();
+            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0x09: // ADD HL, BC
+        case 0x19: // ADD HL, DE
+        case 0x29: // ADD HL, HL
+        case 0x39: // ADD HL, SP
+        {
+            add16_hl_n(pGetCPURegisters()->reg16_arr[BC + hi]); // AF = 0, BC = 1, etc
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        case 0xC7: // RST 0
+        case 0xD7: // RST 2
+        case 0xE7: // RST 4
+        case 0xF7: // RST 6
+        case 0xCF: // RST 1
+        case 0xDF: // RST 3
+        case 0xEF: // RST 5
+        case 0xFF: // RST 7
+        {
+            rst_n(pCurrentInstruction->instruction & 0x38);
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->programCounterSteps = 0; // PC is set explicitly
+            break;
+        }
+
+        case 0xC6: // ADD a, d8
+        {
+            add8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 2;
+            break;
+        }
+
+        case 0xD6: // SUB d8
+        {
+            sub8_n_a(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 2;
+            break;
+        }
+
+        case 0xE6: // AND d8
+        {
+            and8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 2;
+            break;
+        }
+
+        case 0xF6: // ADD a, d8
+        {
+            or8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 2;
+            break;
+        }
+
+        case 0xCE: // ADC a, d8
+        {
+            adc8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 2;
+            break;
+        }
+
+        case 0xDE: // SBC a, d8
+        {
+            sbc8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+
+        case 0xEE: // XOR d8
+        {
+            xor8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+
+        case 0xFE: // CP d8
+        {
+            cp8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            break;
+        }
+
+        case 0xE8: // ADD SP, s8
+        {
+            setRegister16(SP,
+                          fetch8(pGetCPURegisters()->reg16.sp + ((int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1))));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 4;
+            break;
+        }
+
+        case 0x08: // LD (a16), SP
+        {
+            write16(pGetCPURegisters()->reg16.sp, fetch16(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 3;
+            pCurrentInstruction->mCyclesExecuted     += 5;
+            break;
+        }
+
+        case 0xF8: // LD HL, SP+s8
+        {
+            setRegister16(HL, pGetCPURegisters()->reg16.sp + (int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1));
+            pCurrentInstruction->programCounterSteps = 2;
+            pCurrentInstruction->mCyclesExecuted     += 3;
+            break;
+        }
+
+        case 0xF9: // LD SP, HL
+        {
+            setRegister16(SP, pGetCPURegisters()->reg16.hl);
+            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->programCounterSteps = 1;
+            break;
+        }
+
+        default:
+        {
+            Register8 regL                           = A;
+            Register8 regR                           = A;
+            bool      hl                             = false;
+            bool      hlLeft                         = false;
+
+            pCurrentInstruction->mCyclesExecuted     += 1; // by default: only (HL) has 2 cycles
+            pCurrentInstruction->programCounterSteps = 1;
+
+            switch (hi)
+            {
+                // LD functions
+                case 0x04: // LD B,x - LD C,x
+                {
+                    regL = (lo <= 0x07) ? B : C;
+
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                    }
+                    else
+                    {
+                        regR = getRegIndexByOpcodeNibble(lo);
+                    }
+
+                    if (!hl)
+                    {
+                        ld_reg8_reg8(regL, regR);
+                    }
+                    else
+                    {
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        ld_reg8_addr(regL, pGetCPURegisters()->reg16.hl);
+                    }
+
+                    break;
+                }
+                case 0x05: // LD D,x - LD E,x
+                {
+                    regL = (lo <= 0x07) ? D : E;
+
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                    }
+                    else
+                    {
+                        regR = getRegIndexByOpcodeNibble(lo);
+                    }
+
+                    if (!hl)
+                    {
+                        ld_reg8_reg8(regL, regR);
+                    }
+                    else
+                    {
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        ld_reg8_addr(regL, pGetCPURegisters()->reg16.hl);
+                    }
+
+                    break;
+                }
+                case 0x06: // LD H,x - LD L,x
+                {
+                    regL = (lo <= 0x07) ? H : L;
+
+                    if ((lo == 0x06) || (lo == 0x0E)) // 0x6 or 0xE == (HL)
+                    {
+                        hl = true;
+                    }
+                    else
+                    {
+                        regR = getRegIndexByOpcodeNibble(lo);
+                    }
+
+                    if (!hl)
+                    {
+                        ld_reg8_reg8(regL, regR);
+                    }
+                    else
+                    {
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        ld_reg8_addr(regL, pGetCPURegisters()->reg16.hl);
+                    }
+
+                    break;
+                }
+                case 0x07: // LD (HL),x - LD A, x
+                {
+                    if (lo <= 0x07) // (HL). no need to worry about HALT, already handled above
+                    {
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        if (lo != 0x07)
+                        {
+                            regR = getRegIndexByOpcodeNibble(lo);
+                        }
+                        ld_addr_reg8(pGetCPURegisters()->reg16.hl, regR);
+                        break;
+                    }
+
+                    if (lo == 0x0E)
+                    {
+                        hl = true;
+                    }
+                    else
+                    {
+                        regR = getRegIndexByOpcodeNibble(lo);
+                    }
+
+                    if (!hl)
+                    {
+                        ld_reg8_reg8(regL, regR);
+                    }
+                    else
+                    {
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        ld_reg8_addr(regL, pGetCPURegisters()->reg16.hl);
+                    }
+
+                    break;
+                }
+
+                // ADD/ADC A
+                case 0x08:
+                {
+                    if (lo < 0x06)
+                    {
+                        // ADD, B to L
+                        add8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo)]);
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // ADD (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        add8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // ADD A
+                        add8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // ADC, B to L
+                        adc8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo - 0x08)]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // ADC (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        adc8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // ADC A
+                        adc8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // SUB/SBC <reg>
+                case 0x09:
+                {
+                    if (lo < 0x06)
+                    {
+                        // SUB, B to L
+                        sub8_n_a(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo)]);
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // SUB (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        sub8_n_a(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // SUB A
+                        sub8_n_a(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // SBC, B to L
+                        sbc8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo - 0x08)]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // SBC (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        sbc8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // SBC A
+                        sbc8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // AND/XOR <reg>
+                case 0x0A:
+                {
+                    if (lo < 0x06)
+                    {
+                        // AND, B to L
+                        and8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo)]);
+                        break;
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // AND (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        and8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // AND A
+                        and8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // XOR, B to L
+                        xor8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo - 0x08)]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // XOR (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        xor8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // XOR A
+                        xor8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    break;
+                }
+
+                // OR/CP <reg>
+                case 0x0B:
+                {
+                    if (lo < 0x06)
+                    {
+                        // OR, B to L
+                        or8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo)]);
+                        break;
+                    }
+                    else if (lo == 0x06)
+                    {
+                        // OR (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        or8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x07)
+                    {
+                        // OR A
+                        or8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    else if (lo < 0x0E)
+                    {
+                        // CP, B to L
+                        cp8_a_n(pGetCPURegisters()->reg8_arr[getRegIndexByOpcodeNibble(lo - 0x08)]);
+                    }
+                    else if (lo == 0x0E)
+                    {
+                        // CP (HL)
+                        pCurrentInstruction->mCyclesExecuted += 2;
+                        cp8_a_n(fetch8(pGetCPURegisters()->reg16.hl));
+                    }
+                    else if (lo == 0x0F)
+                    {
+                        // CP A
+                        cp8_a_n(pGetCPURegisters()->reg8_arr[A]);
+                    }
+                    break;
+                }
+                default:
+                {
+                    printf("unknown instruction 0x%2x at 0x%04x\n", pCurrentInstruction->instruction,
+                           pGetCPURegisters()->reg16.pc);
+                    assert(1 == 0);
+                }
+            }
+        }
+    }
+}
+
 /**
  * @brief Rotate Left through Carry
  * @note  carry becomes 0, and bit 7 is copied to carry
@@ -967,4 +2064,575 @@ static uint8_t _srl(uint8_t val)
     }
 
     return ret;
+}
+
+static size_t decodeAndExecuteCBPrefix(void)
+{
+    uint8_t instr     = fetch8(pGetCPURegisters()->reg16.pc + 1); // CB prefix takes next instruction
+    uint8_t hi        = instr >> 4;
+    uint8_t lo        = instr & 15;
+
+    size_t  addCycles = 0;
+
+    switch (hi)
+    {
+        // RLC/RRC
+        case 0x00:
+        {
+            if (lo < 0x06)
+            {
+                // RLC basic, B to L
+                rlc_reg(getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                // RLC (HL)
+                rlc_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                // RLC A
+                rlc_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // RRC basic, B to L
+                rrc_reg(getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                // RRC (HL)
+                rrc_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                // RRC A
+                rrc_reg(A);
+            }
+            break;
+        }
+        // RL/RR
+        case 0x01:
+        {
+            if (lo < 0x06)
+            {
+                // RL basic, B to L
+                rl_reg(getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                // RL (HL)
+                rl_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                // RL A
+                rl_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // RR basic, B to L
+                rr_reg(getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                // RR (HL)
+                rr_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                // RR A
+                rr_reg(A);
+            }
+            break;
+        }
+        // SLA/SRA
+        case 0x02:
+        {
+            if (lo < 0x06)
+            {
+                // SLA basic, B to L
+                sla_reg(getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                // SLA (HL)
+                sla_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                // SLA A
+                sla_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // SRA basic, B to L
+                sra_reg(getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                // SRA (HL)
+                sra_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                // SRA A
+                sra_reg(A);
+            }
+            break;
+        }
+        // SWAP/SRL
+        case 0x03:
+        {
+            if (lo < 0x06)
+            {
+                // SWAP basic, B to L
+                swap8_reg(getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                // SWAP (HL)
+                swap8_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                // SWAP A
+                swap8_reg(A);
+            }
+            else if (lo < 0x0E)
+            {
+                // SRL basic, B to L
+                srl_reg(getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                // SRL (HL)
+                srl_addr(pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                // SRL A
+                srl_reg(A);
+            }
+            break;
+        }
+        // BIT 0/1, reg
+        case 0x04:
+        {
+            if (lo < 0x06)
+            {
+                bit_n_reg(0, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(0, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x07)
+            {
+                bit_n_reg(0, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(1, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_addr(1, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(1, A);
+            }
+            break;
+        }
+        // BIT 2/3, reg
+        case 0x05:
+        {
+            if (lo < 0x06)
+            {
+                bit_n_reg(2, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(2, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x07)
+            {
+                bit_n_reg(2, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(3, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_addr(3, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(3, A);
+            }
+            break;
+        }
+        // BIT 4/5, reg
+        case 0x06:
+        {
+            if (lo < 0x06)
+            {
+                bit_n_reg(4, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(4, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x07)
+            {
+                bit_n_reg(4, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(5, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_addr(5, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(5, A);
+            }
+            break;
+        }
+        // BIT 6/7, reg
+        case 0x07:
+        {
+            if (lo < 0x06)
+            {
+                bit_n_reg(6, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                bit_n_addr(6, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x07)
+            {
+                bit_n_reg(6, A);
+            }
+            else if (lo < 0x0E)
+            {
+                bit_n_reg(7, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                bit_n_addr(7, pGetCPURegisters()->reg16.hl);
+                addCycles = 1;
+            }
+            else if (lo == 0x0F)
+            {
+                bit_n_reg(7, A);
+            }
+            break;
+        }
+        // RES 0/1
+        case 0x08:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(0, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(0, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(0, A);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(1, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(1, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(1, A);
+            }
+            break;
+        }
+        // RES 2/3
+        case 0x09:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(2, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(2, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(2, A);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(3, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(3, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(3, A);
+            }
+            break;
+        }
+        // RES 4/5
+        case 0x0A:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(4, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(4, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(4, A);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(5, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(5, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(5, A);
+            }
+            break;
+        }
+        // RES 6/7
+        case 0x0B:
+        {
+            if (lo < 0x06)
+            {
+                reset_n_reg(6, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                reset_n_addr(6, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                reset_n_reg(6, A);
+            }
+            else if (lo < 0x0E)
+            {
+                reset_n_reg(7, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                reset_n_addr(7, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                reset_n_reg(7, A);
+            }
+            break;
+        }
+        // SET 0/1
+        case 0x0C:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(0, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(0, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(0, A);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(1, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(1, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(1, A);
+            }
+            break;
+        }
+        // SET 2/3
+        case 0x0D:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(2, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(2, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(2, A);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(3, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(3, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(3, A);
+            }
+            break;
+        }
+        // SET 4/5
+        case 0x0E:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(4, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(4, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(4, A);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(5, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(5, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(5, A);
+            }
+            break;
+        }
+        // SET 6/7
+        case 0x0F:
+        {
+            if (lo < 0x06)
+            {
+                set_n_reg(6, getRegIndexByOpcodeNibble(lo));
+            }
+            else if (lo == 0x06)
+            {
+                set_n_addr(6, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x07)
+            {
+                set_n_reg(6, A);
+            }
+            else if (lo < 0x0E)
+            {
+                set_n_reg(7, getRegIndexByOpcodeNibble(lo - 0x08));
+            }
+            else if (lo == 0x0E)
+            {
+                set_n_addr(7, pGetCPURegisters()->reg16.hl);
+                addCycles = 2;
+            }
+            else if (lo == 0x0F)
+            {
+                set_n_reg(7, A);
+            }
+            break;
+        }
+
+        default:
+        {
+            printf("unknown CB instr CB %02X\n", instr);
+            while (true);
+        }
+    }
+
+    return addCycles;
+}
+
+static size_t getRegIndexByOpcodeNibble(uint8_t lo)
+{
+    switch (lo)
+    {
+        case 0x0:
+        case 0x8:
+            return 3; // B
+        case 0x1:
+        case 0x9:
+            return 2; // C
+        case 0x2:
+        case 0xA:
+            return 5; // D
+        case 0x3:
+        case 0xB:
+            return 4; // E
+        case 0x4:
+        case 0xC:
+            return 7; // H
+        case 0x5:
+        case 0xD:
+            return 6; // L
+        case 0x7:
+        case 0xF:
+            return 1; // A
+        default:
+            return -1;
+    }
 }

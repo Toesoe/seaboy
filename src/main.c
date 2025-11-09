@@ -16,12 +16,8 @@
 #include "hw/ppu.h"
 #include "hw/joypad.h"
 
-#include "hw/instr.h"
-
 #include "drv/audio.h"
 #include "drv/render.h"
-
-#include "cputest.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,7 +57,7 @@ int main()
     initRenderWindow();
     initAudio();
 
-    SCPUExecuteReturnState_t cpuStateCurrentCycle;
+    size_t mCyclesCurrentLoop = 0;
 
     // frame timing sync
     uint64_t lastFrameTime = SDL_GetPerformanceCounter();
@@ -75,8 +71,6 @@ int main()
 
     while (true)
     {
-        uint8_t opcode  = fetch8(pCpu->reg16.pc);
-
         // printf("executing 0x%02x at pc 0x%02x\n", opcode, pCpu->reg16.pc);
 #ifdef GB_DOCTOR
         fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
@@ -84,37 +78,15 @@ int main()
                 pCpu->reg16.sp, pCpu->reg16.pc, fetch8(pCpu->reg16.pc), fetch8(pCpu->reg16.pc+1), fetch8(pCpu->reg16.pc+2), fetch8(pCpu->reg16.pc+3));
 #endif
 
-        if (pCpu->reg16.pc == 0xC2BE)
-        {
-            __asm("nop");
-        }
-        if (!checkHalted() || !checkStopped())
-        {
-            // decode - execute
-            cpuStateCurrentCycle = executeInstruction(opcode);
-        }
-
-        if (checkDelayedIMELatch())
-        {
-            delayedIMECounter++;
-
-            if (delayedIMECounter == 2)
-            {
-                setIME();
-                resetDelayedIMELatch();
-                delayedIMECounter = 0;
-            }
-        }
+        // interrupt handling - fetch - decode - execute + timers
+        mCyclesCurrentLoop = stepCPU();
+        cycleCounter += mCyclesCurrentLoop;
 
         if (!checkStopped())
         {
             // clock peripherals with T-cycles
-            handleTimers(cpuStateCurrentCycle.mCyclesExecuted * 4);
-            frameComplete = ppuTick(cpuStateCurrentCycle.mCyclesExecuted * 4);
-            apuTick(cpuStateCurrentCycle.mCyclesExecuted * 4);
-
-            if (!checkHalted()) { stepCpu(cpuStateCurrentCycle.programCounterSteps); }
-            cpuStateCurrentCycle.mCyclesExecuted += handleInterrupts();
+            frameComplete = ppuTick(mCyclesCurrentLoop * 4);
+            apuTick(mCyclesCurrentLoop * 4);
         }
 
         if ((cycleCounter % (CYCLES_PER_FRAME / 4)) == 0)

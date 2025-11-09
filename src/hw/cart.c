@@ -333,7 +333,7 @@ static void handleMBC1(uint16_t val, uint16_t addr)
         else if (g_cartridge.advancedBankingModeEnabled)
         {
             g_cartridge.selectedRomBankNum &= (val << 4);
-            printf("advanced rombank select %d\n", g_cartridge.selectedRomBankNum);
+            printf("advanced rombank select %zu\n", g_cartridge.selectedRomBankNum);
             g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE]);
         }
     }

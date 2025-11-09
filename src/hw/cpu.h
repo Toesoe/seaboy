@@ -14,6 +14,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define CPU_CLOCK_SPEED_HZ (4194304)
 
@@ -80,9 +81,10 @@ typedef union __attribute__((__packed__))
 
 typedef struct
 {
+    uint8_t instruction;
     uint8_t programCounterSteps;
     uint8_t mCyclesExecuted;
-} SCPUExecuteReturnState_t;
+} SCPUCurrentCycleState_t;
 
 // functions
 /**
@@ -108,9 +110,9 @@ void resetFlag(Flag);
 bool testFlag(Flag);
 
 /**
- * @brief step the program counter
+ * @brief increment the program counter
  */
-void stepCpu(int);
+void incrementProgramCounter(int);
 
 /**
  * @brief set PC to a specific address
@@ -136,19 +138,23 @@ void setIME();
 void resetIME();
 bool checkIME();
 
+void setDelayedIMELatch();
+void resetDelayedIMELatch();
 bool checkDelayedIMELatch();
-bool resetDelayedIMELatch();
 
+void setHalted();
+void resetHalted();
 bool checkHalted();
+
+void setStopped();
+void resetStopped();
 bool checkStopped();
 
 /**
- * @brief map instruction to actual decoding function
+ * @brief fetch-decode-execute loop
+ * 
+ * @return size_t mCycles consumed this iteration
  */
-SCPUExecuteReturnState_t executeInstruction(uint8_t);
-
-int  handleInterrupts(void);
-
-void handleTimers(int);
+size_t stepCPU();
 
 #endif // !_CPU_H_

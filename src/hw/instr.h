@@ -303,4 +303,6 @@ void ret(void);
 bool ret_cond(Flag, bool);
 void reti(void);
 
+void decodeAndExecute(SCPUCurrentCycleState_t *);
+
 #endif //!_INSTR_H_
