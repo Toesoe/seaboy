@@ -9,8 +9,8 @@ if you have SDL2 installed, you can build the project using CMake without any is
 
 feature list:
 
-- ❕ CPU instructions
-  - behaviour is inconsistent: still some instructions to go. doesn't yet pass all instruction test ROMs
+- ✅ CPU instructions
+  - all pass Blargg testing
 - ❕ interrupt behaviour
     - timing of EI is off
 - ❕ APU

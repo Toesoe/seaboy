@@ -43,7 +43,7 @@ int main()
 
     uint32_t cycleCounter          = 0;
 
-    initializeBus(pLoadRom("roms/11-op a,(hl).gb"), skipBootrom);
+    initializeBus(pLoadRom("roms/02-interrupts.gb"), skipBootrom);
 
     pBus = pGetAddressBus();
     pCpu = pGetCPURegisters();

@@ -279,8 +279,6 @@ size_t stepCPU()
                 g_cpu.registers.reg16.sp, g_cpu.registers.reg16.pc, fetch8(g_cpu.registers.reg16.pc), fetch8(g_cpu.registers.reg16.pc+1), fetch8(g_cpu.registers.reg16.pc+2), fetch8(g_cpu.registers.reg16.pc+3));
 #endif
 
-    thisCycle.mCyclesExecuted += handleInterrupts();
-
     if (g_cpu.haltModeCurrent == HALT_MODE_SKIP_NEXT_INSTRUCTION_PC)
     {
         g_cpu.haltModeCurrent = HALT_MODE_NONE;
@@ -311,6 +309,8 @@ size_t stepCPU()
         g_cpu.isStopped = true;
         g_cpu.stopRequested = false;
     }
+
+    thisCycle.mCyclesExecuted += handleInterrupts();
 
     if (checkDelayedIMELatch())
     {

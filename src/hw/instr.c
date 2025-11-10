@@ -18,22 +18,24 @@
 
 static SCPURegisters_t *g_pCPURegisters;
 
-#define CHECK_HALF_CARRY_ADD8(a, b)  ((((a) & 0xF) + ((b) & 0xF)) & 0x10)
-#define CHECK_HALF_CARRY_SUB8(a, b)  ((((a) & 0xF) - ((b) & 0xF)) & 0x10)
-#define CHECK_HALF_CARRY_ADC8(a, b, c)  ((((a) & 0xF) + ((b) & 0xF) + ((c) & 0xF)) & 0x10)
-#define CHECK_HALF_CARRY_SBC8(a, b, c)  ((((a) & 0xF) - ((b) & 0xF) - ((c) & 0xF)) & 0x10)
+// half-carry is set when a carry occurs from lower to higher nibble (e.g. bit 3 to 4)
+#define CHECK_HALF_CARRY_ADD8(a, b)    ((((a) & 0xF) + ((b) & 0xF)) & 0x10)
+#define CHECK_HALF_CARRY_SUB8(a, b)    ((((a) & 0xF) - ((b) & 0xF)) & 0x10)
+#define CHECK_HALF_CARRY_ADC8(a, b, c) ((((a) & 0xF) + ((b) & 0xF) + ((c) & 0xF)) & 0x10)
+#define CHECK_HALF_CARRY_SBC8(a, b, c) ((((a) & 0xF) - ((b) & 0xF) - ((c) & 0xF)) & 0x10)
 
-#define CHECK_HALF_CARRY_ADD16(a, b) (((((a) & 0xFFF) + ((b) & 0xFFF)) & 0x1000) == 0x1000)
-#define CHECK_HALF_CARRY_SUB16(a, b) (((a) & 0xFFF) < ((b) & 0xFFF))
+// for a 16-bit half carry, we check for carry from lower to higher byte instead (bit 8 to 9)
+#define CHECK_HALF_CARRY_ADD16(a, b)   (((((a) & 0xFFF) + ((b) & 0xFFF)) & 0x1000) == 0x1000)
+#define CHECK_HALF_CARRY_SUB16(a, b)   (((a) & 0xFFF) < ((b) & 0xFFF))
 
-// static defs
-static uint8_t _rl(uint8_t val);
-static uint8_t _rlc(uint8_t val);
-static uint8_t _sla(uint8_t val);
-static uint8_t _rr(uint8_t val);
-static uint8_t _rrc(uint8_t val);
-static uint8_t _sra(uint8_t val);
-static uint8_t _srl(uint8_t val);
+// bitwise rotation functions
+static uint8_t _rl(uint8_t);
+static uint8_t _rlc(uint8_t);
+static uint8_t _sla(uint8_t);
+static uint8_t _rr(uint8_t);
+static uint8_t _rrc(uint8_t);
+static uint8_t _sra(uint8_t);
+static uint8_t _srl(uint8_t);
 
 static size_t  decodeAndExecuteCBPrefix(void);
 static size_t  getRegIndexByOpcodeNibble(uint8_t);
@@ -43,7 +45,9 @@ void           instrSetCpuPtr(SCPURegisters_t *pCpuSet)
     g_pCPURegisters = pCpuSet;
 }
 
+//
 // 8 bit loads
+//
 
 void ld_reg8_imm(Register8 reg)
 {
@@ -60,12 +64,6 @@ void ld_reg8_reg8(Register8 left, Register8 right)
     setRegister8(left, g_pCPURegisters->reg8_arr[right]);
 }
 
-/**
- * @brief set value at mem address to 8-bit reg value
- *
- * @param addr address to write to
- * @param reg register containing value to write
- */
 void ld_addr_reg8(uint16_t addr, Register8 reg)
 {
     write8(g_pCPURegisters->reg8_arr[reg], addr);
@@ -106,55 +104,37 @@ void ldh_a_offset_mem(uint8_t offset)
     setRegister8(A, fetch8(0xFF00 + offset));
 }
 
+//
 // 16-bit loads
+//
 
-/**
- * @brief load 16-bit immediate value to register reg
- *
- * @param reg register to load into
- */
 void ld_reg16_imm(Register16 reg)
 {
     setRegister16(reg, fetch16(g_pCPURegisters->reg16.pc + 1));
 }
 
-/**
- * @brief load 16-bit immediate value to memory address addr
- *
- * @param addr memory address to load to
- */
 void ld_addr_imm16(uint16_t addr)
 {
     write16(fetch16(g_pCPURegisters->reg16.pc + 1), addr);
 }
 
-/**
- * @brief push a 16-bit register's value to the stack
- *
- * @note takes care of stack pointer decrease
- *
- * @param reg register which needs its value pushed on the stack
- */
 void push_reg16(Register16 reg)
 {
     setRegister16(SP, g_pCPURegisters->reg16.sp - 2);
     write16(g_pCPURegisters->reg16_arr[reg], g_pCPURegisters->reg16.sp);
 }
 
-/**
- * @brief pop a 16-bit value from the stack to register reg
- *
- * @note takes care of stack pointer increase
- *
- * @param reg register which gains a value from the stack
- */
 void pop_reg16(Register16 reg)
 {
     setRegister16(reg, fetch16(g_pCPURegisters->reg16.sp));
     setRegister16(SP, g_pCPURegisters->reg16.sp + 2);
 }
 
+//
 // 8-bit arithmetic
+// most add functions promote the internal value to an u16 to validate if we pass the u8 boundary for easy carry checks
+// sub functions use an i16 instead to check if we go below 0
+//
 
 void add8_a_n(uint8_t val)
 {
@@ -171,7 +151,7 @@ void add8_a_n(uint8_t val)
 
 void adc8_a_n(uint8_t val)
 {
-    uint16_t sum = g_pCPURegisters->reg8.a + val + testFlag(FLAG_C);
+    uint16_t sum       = g_pCPURegisters->reg8.a + val + testFlag(FLAG_C);
     uint8_t  carryFlag = testFlag(FLAG_C) ? 1 : 0;
 
     (sum > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
@@ -204,7 +184,7 @@ void sbc8_a_n(uint8_t val)
 
     (result < 0) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     ((uint8_t)result == 0) ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
-    CHECK_HALF_CARRY_SBC8(g_pCPURegisters->reg8.a, val,  carry) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_SBC8(g_pCPURegisters->reg8.a, val, carry) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     setFlag(FLAG_N);
 
@@ -255,24 +235,24 @@ void cp8_a_n(uint8_t val)
 
 void inc8_reg(Register8 reg)
 {
-    uint8_t value  = g_pCPURegisters->reg8_arr[reg];
+    uint8_t regValue = g_pCPURegisters->reg8_arr[reg];
 
-    uint8_t result = value + 1;
+    uint8_t result   = regValue + 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     resetFlag(FLAG_N);
-    CHECK_HALF_CARRY_ADD8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_ADD8(regValue, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     setRegister8(reg, result);
 }
 
 void dec8_reg(Register8 reg)
 {
-    uint8_t value  = g_pCPURegisters->reg8_arr[reg];
+    uint8_t regValue = g_pCPURegisters->reg8_arr[reg];
 
-    uint8_t result = value - 1;
+    uint8_t result   = regValue - 1;
     result == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
     setFlag(FLAG_N);
-    CHECK_HALF_CARRY_SUB8(value, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    CHECK_HALF_CARRY_SUB8(regValue, 1) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     setRegister8(reg, result);
 }
@@ -303,11 +283,6 @@ void dec8_mem(uint16_t addr)
 
 // 16-bit arithmetic
 
-/**
- * @brief add val to HL
- *
- * @param val
- */
 void add16_hl_n(uint16_t val)
 {
     uint32_t sum = g_pCPURegisters->reg16.hl + val;
@@ -320,11 +295,14 @@ void add16_hl_n(uint16_t val)
     setRegister16(HL, (uint16_t)sum);
 }
 
-void add16_sp_n(int16_t val)
+void add8_sp_n(int8_t val)
 {
     int32_t sum = g_pCPURegisters->reg16.sp + val;
 
-    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF)+ (uint8_t)val) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    // NOTE: this function operates on an 8-bit so the 8-bit ALU is used, meaning we set the 8-bit flags using only
+    // the lower half of the int16!
+
+    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF) + (uint8_t)val) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
     CHECK_HALF_CARRY_ADD8((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF), val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     resetFlag(FLAG_N);
@@ -332,12 +310,13 @@ void add16_sp_n(int16_t val)
     setRegister16(SP, (uint16_t)sum);
 }
 
-void ldhl_sp_n(int16_t offset)
+void ldhl_sp_n(int8_t val)
 {
-    int32_t sum = g_pCPURegisters->reg16.sp + offset;
+    int32_t sum = g_pCPURegisters->reg16.sp + val;
 
-    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF)+ (uint8_t)offset) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
-    CHECK_HALF_CARRY_ADD8((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF), offset) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
+    // same as the above.
+    (((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF) + (uint8_t)val) > UINT8_MAX) ? setFlag(FLAG_C) : resetFlag(FLAG_C);
+    CHECK_HALF_CARRY_ADD8((uint8_t)(g_pCPURegisters->reg16.sp & 0xFF), val) ? setFlag(FLAG_H) : resetFlag(FLAG_H);
 
     resetFlag(FLAG_N);
     resetFlag(FLAG_Z);
@@ -354,7 +333,9 @@ void dec16_reg(Register16 reg)
     setRegister16(reg, g_pCPURegisters->reg16_arr[reg] - 1);
 }
 
+//
 // misc
+//
 
 void swap8_reg(Register8 reg)
 {
@@ -377,11 +358,6 @@ void swap8_addr(uint16_t addr)
     fetch8(addr) == 0 ? setFlag(FLAG_Z) : resetFlag(FLAG_Z);
 }
 
-/**
- * @brief bcd conversion of value in reg a
- * @note  this instruction is weird. stole the implementation from https://forums.nesdev.org/viewtopic.php?t=15944
- *
- */
 void daa(void)
 {
     uint8_t aVal = g_pCPURegisters->reg8.a;
@@ -427,14 +403,8 @@ void cpl(void)
 
 void ccf(void)
 {
-    if (testFlag(FLAG_C))
-    {
-        resetFlag(FLAG_C);
-    }
-    else
-    {
-        setFlag(FLAG_C);
-    }
+    testFlag(FLAG_C) ? resetFlag(FLAG_C) : setFlag(FLAG_C);
+
     resetFlag(FLAG_N);
     resetFlag(FLAG_H);
 }
@@ -448,11 +418,6 @@ void scf(void)
 
 // rotates & shifts
 
-/**
- * @brief 0x07, rotate left circular accumulator
- * @note  bit 7 is copied to the CARRY flag, CARRY goes to bit 0
- *
- */
 void rlca(void)
 {
     setRegister8(A, _rlc(g_pCPURegisters->reg8.a));
@@ -547,7 +512,9 @@ void srl_addr(uint16_t addr)
     write8(_srl(fetch8(addr)), addr);
 }
 
+//
 // single bit stuff
+//
 
 void bit_n_reg(uint8_t bit, Register8 reg)
 {
@@ -563,7 +530,6 @@ void bit_n_addr(uint8_t bit, uint16_t addr)
     resetFlag(FLAG_N);
     setFlag(FLAG_H);
 
-    // Z set if bit set
     fetch8(addr) & (1 << bit) ? resetFlag(FLAG_Z) : setFlag(FLAG_Z);
 }
 
@@ -587,25 +553,15 @@ void reset_n_addr(uint8_t bit, uint16_t addr)
     write8(fetch8(addr) & ~(1 << bit), addr);
 }
 
+//
 // jumps
+//
 
-/**
- * @brief perform nonrelative unconditional jump to 16-bit immediate value
- *
- */
 void jmp_imm16()
 {
     setRegister16(PC, fetch16(g_pCPURegisters->reg16.pc + 1));
 }
 
-/**
- * @brief perform nonrelative conditional jump to 16-bit immediate value
- *
- * @param flag flag to test
- * @param testSet if true, will execute jump if specified flag is set
- * @return true     if jumped
- * @return false    if not (test was false)
- */
 bool jmp_imm16_cond(Flag flag, bool testSet)
 {
     bool ret = false;
@@ -630,33 +586,17 @@ bool jmp_imm16_cond(Flag flag, bool testSet)
     return ret;
 }
 
-/**
- * @brief perform nonrelative unconditional jump to address specified in HL
- *
- */
 void jmp_hl(void)
 {
     setRegister16(PC, g_pCPURegisters->reg16.hl);
 }
 
-/**
- * @brief perform relative unconditional jump to signed 8-bit immediate
- *
- */
 void jr_imm8()
 {
     // add 2 for JR size
     setRegister16(PC, g_pCPURegisters->reg16.pc + 2 + (int8_t)fetch8(g_pCPURegisters->reg16.pc + 1));
 }
 
-/**
- * @brief perform relative conditional jump to signed 8-bit immediate
- *
- * @param flag      flag to test
- * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
- * @return true     if jumped
- * @return false    if not (test was false)
- */
 bool jr_imm8_cond(Flag flag, bool testSet)
 {
     bool ret = false;
@@ -681,13 +621,10 @@ bool jr_imm8_cond(Flag flag, bool testSet)
     return ret;
 }
 
+//
 // calls
+//
 
-/**
- * @brief call subroutine at unsigned 16-bit immediate
- *
- * @note pushes address of first instr after subroutine to stack, decrements SP by 2
- */
 void call_imm16()
 {
     // decrement SP
@@ -700,14 +637,6 @@ void call_imm16()
     setRegister16(PC, fetch16(g_pCPURegisters->reg16.pc + 1));
 }
 
-/**
- * @brief conditionally call subroutine at unsigned 16-bit immediate
- *
- * @param flag      flag to test
- * @param testSet   if true, will test if <flag> is set, otherwise will test for 0
- * @return true     if jumped
- * @return false    if not (test was false)
- */
 bool call_imm16_cond(Flag flag, bool testSet)
 {
     bool ret = false;
@@ -744,13 +673,6 @@ void call_irq_subroutine(uint8_t addr)
     setRegister16(PC, addr);
 }
 
-/**
- * @brief call RST page between 0 and 8
- *
- * @note stores next valid PC on stack. RSTs are at 0x00, 0x08, 0x10, etc
- *
- * @param addr RST addr to call
- */
 void rst_n(uint8_t addr)
 {
     g_pCPURegisters->reg16.sp -= 2;
@@ -758,10 +680,6 @@ void rst_n(uint8_t addr)
     setRegister16(PC, addr);
 }
 
-/**
- * @brief return from subroutine. pulls next PC address from stack
- *
- */
 void ret(void)
 {
     setRegister16(PC, fetch16(g_pCPURegisters->reg16.sp));
@@ -794,8 +712,8 @@ bool ret_cond(Flag flag, bool testSet)
 
 void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
 {
-    uint8_t hi = pCurrentInstruction->instruction >> 4;
-    uint8_t lo = pCurrentInstruction->instruction & 15;
+    uint8_t hi                               = pCurrentInstruction->instruction >> 4;
+    uint8_t lo                               = pCurrentInstruction->instruction & 15;
 
     pCurrentInstruction->programCounterSteps = 1;
 
@@ -804,7 +722,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
     {
         case 0x00: // NOP
         {
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             break;
         }
         case 0x01: // LD BC,d16
@@ -814,7 +732,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ld_reg16_imm(BC + hi); // use high nibble
             pCurrentInstruction->programCounterSteps = 3;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0x02: // LD (BC),A
@@ -843,27 +761,27 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ld_reg8_imm(B);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x16: // LD D,d8
         {
             ld_reg8_imm(D);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x26: // LD H,d8
         {
             ld_reg8_imm(H);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x36: // LD (HL),d8
         {
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             ld_addr_imm8(pGetCPURegisters()->reg16.hl);
             break;
         }
@@ -897,28 +815,28 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ld_reg8_imm(C);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x1E: // LD E,d8
         {
             ld_reg8_imm(E);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x2E: // LD L,d8
         {
             ld_reg8_imm(L);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0x3E: // LD A,d8
         {
             ld_reg8_imm(A);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
         case 0xE2: // LD (0xFF00 + C),A
@@ -937,28 +855,28 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ld_addr_reg8(0xFF00 + fetch8(pGetCPURegisters()->reg16.pc + 1), A);
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0xF0: // LDH A, (a8) (load from 0xFF00+8-bit unsigned value to A)
         {
             ld_reg8_addr(A, 0xFF00 + fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0xEA: // LD (a16), A (load from A to addr)
         {
             ld_addr_reg8(fetch16(pGetCPURegisters()->reg16.pc + 1), A);
             pCurrentInstruction->programCounterSteps = 3;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xFA: // LD A, (a16) (load from addr to A)
         {
             ld_reg8_addr(A, fetch16(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 3;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0x0C: // INC C
@@ -972,7 +890,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(C);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -987,7 +905,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(E);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1002,7 +920,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(L);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1017,7 +935,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(A);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             ;
             break;
@@ -1033,7 +951,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(B);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1048,7 +966,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(D);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1063,7 +981,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_reg(H);
             }
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1078,7 +996,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec8_mem(pGetCPURegisters()->reg16.hl);
             }
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1100,41 +1018,41 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             {
                 dec16_reg(reg);
             }
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
         case 0x07: // RLCA (rotate left circular A)
         {
             rlca();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
         case 0x17: // RLA (rotate left through carry A)
         {
             rla();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
         case 0x0F: // RRCA (rotate right circular A)
         {
             rrca();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
         case 0x1F: // RRA (rotate right through carry A)
         {
             rra();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
         case 0xCB: // CB-prefixed
         {
-            pCurrentInstruction->mCyclesExecuted     += 2 + decodeAndExecuteCBPrefix(); // all CB's use at least 2 cycles
+            pCurrentInstruction->mCyclesExecuted += 2 + decodeAndExecuteCBPrefix(); // all CB's use at least 2 cycles
             pCurrentInstruction->programCounterSteps = 2; // CB doesn't take immediates, always 2 bytes
             break;
         }
@@ -1146,7 +1064,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             jr_imm8();
             pCurrentInstruction->programCounterSteps = 0;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0x20: // JR NZ,s8
@@ -1183,7 +1101,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             jmp_imm16();
             pCurrentInstruction->programCounterSteps = 0;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xC2: // JP NZ,a16
@@ -1220,7 +1138,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xE9: // JP HL
         {
             jmp_hl();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 0;
             break;
         }
@@ -1259,7 +1177,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         }
         case 0xCD: // CALL a16
         {
-            pCurrentInstruction->mCyclesExecuted     += 6;
+            pCurrentInstruction->mCyclesExecuted += 6;
             pCurrentInstruction->programCounterSteps = 0;
             call_imm16();
             break;
@@ -1271,21 +1189,21 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             pop_reg16(BC);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0xD1: // POP DE
         {
             pop_reg16(DE);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0xE1: // POP HL
         {
             pop_reg16(HL);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
         case 0xF1: // POP AF
@@ -1294,7 +1212,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             // zero unused nibble of flags register
             setRegister8(F, pGetCPURegisters()->reg8.f & 0xF0);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
 
@@ -1304,28 +1222,28 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             push_reg16(BC);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xD5: // PUSH DE
         {
             push_reg16(DE);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xE5: // PUSH HL
         {
             push_reg16(HL);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xF5: // PUSH AF
         {
             push_reg16(AF);
             pCurrentInstruction->programCounterSteps = 1;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
 
@@ -1334,7 +1252,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ret();
             pCurrentInstruction->programCounterSteps = 0;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
         case 0xD9: // RETI
@@ -1342,7 +1260,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             setIME();
             ret();
             pCurrentInstruction->programCounterSteps = 0;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
 
@@ -1351,12 +1269,12 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             if (!testFlag(FLAG_Z))
             {
                 ret();
-                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->mCyclesExecuted += 5;
                 pCurrentInstruction->programCounterSteps = 0;
             }
             else
             {
-                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->mCyclesExecuted += 2;
                 pCurrentInstruction->programCounterSteps = 1;
             }
             break;
@@ -1367,12 +1285,12 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             if (testFlag(FLAG_Z))
             {
                 ret();
-                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->mCyclesExecuted += 5;
                 pCurrentInstruction->programCounterSteps = 0;
             }
             else
             {
-                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->mCyclesExecuted += 2;
                 pCurrentInstruction->programCounterSteps = 1;
             }
             break;
@@ -1383,12 +1301,12 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             if (!testFlag(FLAG_C))
             {
                 ret();
-                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->mCyclesExecuted += 5;
                 pCurrentInstruction->programCounterSteps = 0;
             }
             else
             {
-                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->mCyclesExecuted += 2;
                 pCurrentInstruction->programCounterSteps = 1;
             }
             break;
@@ -1399,12 +1317,12 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
             if (testFlag(FLAG_C))
             {
                 ret();
-                pCurrentInstruction->mCyclesExecuted     += 5;
+                pCurrentInstruction->mCyclesExecuted += 5;
                 pCurrentInstruction->programCounterSteps = 0;
             }
             else
             {
-                pCurrentInstruction->mCyclesExecuted     += 2;
+                pCurrentInstruction->mCyclesExecuted += 2;
                 pCurrentInstruction->programCounterSteps = 1;
             }
             break;
@@ -1412,7 +1330,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
 
         case 0x76: // HALT
         {
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             setHaltRequested();
             break;
@@ -1420,7 +1338,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
 
         case 0x10: // STOP
         {
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 1;
             setStopped();
             resetIME();
@@ -1431,7 +1349,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0x27: // DAA
         {
             daa();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1439,7 +1357,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0x2F: // CPL
         {
             cpl();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1447,7 +1365,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0x3F: // CCF
         {
             ccf();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1455,7 +1373,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0x37: // SCF
         {
             scf();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1463,7 +1381,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xF3: // DI
         {
             resetIME();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1471,7 +1389,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xFB: // EI
         {
             setDelayedIMELatch();
-            pCurrentInstruction->mCyclesExecuted     += 1;
+            pCurrentInstruction->mCyclesExecuted += 1;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1482,7 +1400,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0x39: // ADD HL, SP
         {
             add16_hl_n(pGetCPURegisters()->reg16_arr[BC + hi]); // AF = 0, BC = 1, etc
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
@@ -1497,7 +1415,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xFF: // RST 7
         {
             rst_n(pCurrentInstruction->instruction & 0x38);
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             pCurrentInstruction->programCounterSteps = 0; // PC is set explicitly
             break;
         }
@@ -1505,7 +1423,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xC6: // ADD a, d8
         {
             add8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 2;
             break;
         }
@@ -1513,7 +1431,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xD6: // SUB d8
         {
             sub8_n_a(fetch8(pGetCPURegisters()->reg16.pc + 1));
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 2;
             break;
         }
@@ -1521,7 +1439,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xE6: // AND d8
         {
             and8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 2;
             break;
         }
@@ -1529,7 +1447,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xF6: // ADD a, d8
         {
             or8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 2;
             break;
         }
@@ -1537,7 +1455,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         case 0xCE: // ADC a, d8
         {
             adc8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 2;
             break;
         }
@@ -1546,7 +1464,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             sbc8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
 
@@ -1554,7 +1472,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             xor8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
 
@@ -1562,15 +1480,15 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             cp8_a_n(fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             break;
         }
 
         case 0xE8: // ADD SP, s8
         {
-            add16_sp_n((int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1));
+            add8_sp_n((int8_t)fetch8(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 4;
+            pCurrentInstruction->mCyclesExecuted += 4;
             break;
         }
 
@@ -1578,7 +1496,7 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             write16(pGetCPURegisters()->reg16.sp, fetch16(pGetCPURegisters()->reg16.pc + 1));
             pCurrentInstruction->programCounterSteps = 3;
-            pCurrentInstruction->mCyclesExecuted     += 5;
+            pCurrentInstruction->mCyclesExecuted += 5;
             break;
         }
 
@@ -1586,26 +1504,26 @@ void decodeAndExecute(SCPUCurrentCycleState_t *pCurrentInstruction)
         {
             ldhl_sp_n((int8_t)fetch8((pGetCPURegisters()->reg16.pc + 1)));
             pCurrentInstruction->programCounterSteps = 2;
-            pCurrentInstruction->mCyclesExecuted     += 3;
+            pCurrentInstruction->mCyclesExecuted += 3;
             break;
         }
 
         case 0xF9: // LD SP, HL
         {
             setRegister16(SP, pGetCPURegisters()->reg16.hl);
-            pCurrentInstruction->mCyclesExecuted     += 2;
+            pCurrentInstruction->mCyclesExecuted += 2;
             pCurrentInstruction->programCounterSteps = 1;
             break;
         }
 
         default:
         {
-            Register8 regL                           = A;
-            Register8 regR                           = A;
-            bool      hl                             = false;
-            bool      hlLeft                         = false;
+            Register8 regL   = A;
+            Register8 regR   = A;
+            bool      hl     = false;
+            bool      hlLeft = false;
 
-            pCurrentInstruction->mCyclesExecuted     += 1; // by default: only (HL) has 2 cycles
+            pCurrentInstruction->mCyclesExecuted += 1; // by default: only (HL) has 2 cycles
             pCurrentInstruction->programCounterSteps = 1;
 
             switch (hi)
@@ -2081,9 +1999,9 @@ static uint8_t _sra(uint8_t val)
 
 /**
  * @brief shift right logical: >>1, bit 7 is 0, bit 0 to carry
- * 
- * @param val 
- * @return uint8_t 
+ *
+ * @param val
+ * @return uint8_t
  */
 static uint8_t _srl(uint8_t val)
 {
