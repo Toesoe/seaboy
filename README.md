@@ -21,7 +21,12 @@ feature list:
     - wavechannel keeps playing after it should be silent
 - ✅ PPU
 - ✅ full bus
+
+TODO:
+- ➡️ high CPU usage, probably due to SDL busywait
 - ❌ mapper support
 - ❌ joypad support
     - SDL input handling is not my friend. how can something so easy be so hard? :)
 - ❌ GBC support
+- ❓ serial support
+    - might not implement this

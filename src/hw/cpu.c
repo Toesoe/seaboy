@@ -279,6 +279,24 @@ size_t stepCPU()
                 g_cpu.registers.reg16.sp, g_cpu.registers.reg16.pc, fetch8(g_cpu.registers.reg16.pc), fetch8(g_cpu.registers.reg16.pc+1), fetch8(g_cpu.registers.reg16.pc+2), fetch8(g_cpu.registers.reg16.pc+3));
 #endif
 
+    if (checkDelayedIMELatch())
+    {
+        if (++g_cpu.delayedIMECounter == 2)
+        {
+            setIME();
+            resetDelayedIMELatch();
+            g_cpu.delayedIMECounter = 0;
+        }
+    }
+
+    thisCycle.mCyclesExecuted += handleInterrupts();
+    if (g_cpu.haltModeCurrent == HALT_MODE_NORMAL)
+    {
+        // halted, but tick timers + periphs for 1 mcycle
+        handleTimers(4);
+        return thisCycle.mCyclesExecuted + 1;
+    }
+
     if (g_cpu.haltModeCurrent == HALT_MODE_SKIP_NEXT_INSTRUCTION_PC)
     {
         g_cpu.haltModeCurrent = HALT_MODE_NONE;
@@ -308,18 +326,6 @@ size_t stepCPU()
     {
         g_cpu.isStopped = true;
         g_cpu.stopRequested = false;
-    }
-
-    thisCycle.mCyclesExecuted += handleInterrupts();
-
-    if (checkDelayedIMELatch())
-    {
-        if (++g_cpu.delayedIMECounter == 2)
-        {
-            setIME();
-            resetDelayedIMELatch();
-            g_cpu.delayedIMECounter = 0;
-        }
     }
 
     return thisCycle.mCyclesExecuted;
@@ -388,7 +394,8 @@ static size_t handleInterrupts(void)
 static void handleTimers(size_t cpuCycles)
 {
     uint8_t bitPos = 0;
-    static bool remainingCyclesTIMAReset = 4;
+    static int remainingCyclesTIMAReset = 4;
+    static bool timaOverflowed = false;
 
     if (g_pBus->map.ioregs.timers.TAC.enable)
     {
@@ -411,35 +418,35 @@ static void handleTimers(size_t cpuCycles)
 
     while (cpuCycles--)
     {
-        g_cpu.divCounter++;
+        bool signalNow = (g_cpu.divCounter >> bitPos) & 1;
 
         if (g_pBus->map.ioregs.timers.TAC.enable)
         {
-            bool signalNow = g_pBus->map.ioregs.timers.TAC.enable && (g_cpu.divCounter & (1 << bitPos));
-
-            // check if we have a falling edge
-            if (!signalNow && g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect])
+            if (g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect] && !signalNow)
             {
-                g_pBus->map.ioregs.timers.TIMA++;
-            }
-
-            if (g_pBus->map.ioregs.timers.TIMA == 0x00)
-            {
-                remainingCyclesTIMAReset--;
-
-                if (remainingCyclesTIMAReset == 0)
+                if (++g_pBus->map.ioregs.timers.TIMA == 0x00)
                 {
-                    g_pBus->map.ioregs.timers.TIMA    = g_pBus->map.ioregs.timers.TMA;
-                    g_pBus->map.ioregs.intFlags.timer = 1;
+                    timaOverflowed = true;
                     remainingCyclesTIMAReset = 4;
                 }
             }
 
-           g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect] = signalNow;
+            if (timaOverflowed)
+            {
+                if (--remainingCyclesTIMAReset == 0)
+                {
+                    g_pBus->map.ioregs.timers.TIMA    = g_pBus->map.ioregs.timers.TMA;
+                    g_pBus->map.ioregs.intFlags.timer = 1;
+                    timaOverflowed = false;
+                }
+            }
         }
+
+        g_cpu.timaPreviousSignalLevels[g_pBus->map.ioregs.timers.TAC.clockSelect] = signalNow;
+        g_cpu.divCounter++;
     }
 
-    g_pBus->map.ioregs.divRegister = (uint8_t)(g_cpu.divCounter >> 8) & 0xFF;
+    g_pBus->map.ioregs.divRegister = (uint8_t)((g_cpu.divCounter >> 8) & 0xFF);
 }
 
 /**

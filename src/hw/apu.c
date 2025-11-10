@@ -578,17 +578,19 @@ void generateDownmixCallback(void *userdata, uint8_t *pStream, int len)
 {
     uint16_t *out     = (uint16_t *)pStream;
     size_t    samples = len / sizeof(int16_t);
+    static uint16_t lastSample = 0;
 
     for (size_t i = 0; i < samples; i++)
     {
         if (sampleReadIndex != sampleWriteIndex)
         {
+            lastSample = sampleBuffer[sampleReadIndex & (SAMPLE_BUFFER_SIZE - 1)];
             out[i] = sampleBuffer[sampleReadIndex & (SAMPLE_BUFFER_SIZE - 1)];
             sampleReadIndex++;
         }
         else
         {
-            out[i] = 0; // buffer underrun → output silence
+            out[i] = lastSample; // buffer underrun → output silence
         }
     }
 }
