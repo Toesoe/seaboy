@@ -17,6 +17,7 @@
 
 void apuInit(SAddressBus_t *);
 void apuTick(size_t);
+void apuPushSamples();
 
 void generateDownmixCallback(void *, uint8_t *, int);
 

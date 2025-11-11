@@ -67,8 +67,10 @@ int main()
 
     while (true)
     {
+        joypadEventLoop();
+
         // interrupt handling - fetch - decode - execute + timers
-        mCyclesCurrentLoop = stepCPU();
+        mCyclesCurrentLoop = stepCPU(16);
         cycleCounter += mCyclesCurrentLoop;
 
         if (!checkStopped())
@@ -76,11 +78,6 @@ int main()
             // clock peripherals with T-cycles
             frameComplete = ppuTick(mCyclesCurrentLoop * 4);
             apuTick(mCyclesCurrentLoop * 4);
-        }
-
-        if ((cycleCounter % (CYCLES_PER_FRAME / 4)) == 0)
-        {
-            joypadEventLoop();
         }
 
         if (frameComplete)

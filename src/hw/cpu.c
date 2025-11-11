@@ -269,66 +269,73 @@ void setRegister8(Register8 reg, uint8_t value)
  * 
  * @return size_t mCycles consumed during this iteration
  */
-size_t stepCPU()
+size_t stepCPU(size_t cyclesToRun)
 {
-    SCPUCurrentCycleState_t thisCycle = { 0 };
+    size_t retMcycles = 0;
 
-#ifdef GB_DOCTOR
-        fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
-                g_cpu.registers.reg8.a, g_cpu.registers.reg8.f, g_cpu.registers.reg8.b, g_cpu.registers.reg8.c, g_cpu.registers.reg8.d, g_cpu.registers.reg8.e, g_cpu.registers.reg8.h, g_cpu.registers.reg8.l,
-                g_cpu.registers.reg16.sp, g_cpu.registers.reg16.pc, fetch8(g_cpu.registers.reg16.pc), fetch8(g_cpu.registers.reg16.pc+1), fetch8(g_cpu.registers.reg16.pc+2), fetch8(g_cpu.registers.reg16.pc+3));
-#endif
-
-    if (checkDelayedIMELatch())
+    for (size_t i = 0; i < cyclesToRun; i++)
     {
-        if (++g_cpu.delayedIMECounter == 2)
+        SCPUCurrentCycleState_t thisCycle = { 0 };
+
+    #ifdef GB_DOCTOR
+            fprintf(f, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
+                    g_cpu.registers.reg8.a, g_cpu.registers.reg8.f, g_cpu.registers.reg8.b, g_cpu.registers.reg8.c, g_cpu.registers.reg8.d, g_cpu.registers.reg8.e, g_cpu.registers.reg8.h, g_cpu.registers.reg8.l,
+                    g_cpu.registers.reg16.sp, g_cpu.registers.reg16.pc, fetch8(g_cpu.registers.reg16.pc), fetch8(g_cpu.registers.reg16.pc+1), fetch8(g_cpu.registers.reg16.pc+2), fetch8(g_cpu.registers.reg16.pc+3));
+    #endif
+
+        if (checkDelayedIMELatch())
         {
-            setIME();
-            resetDelayedIMELatch();
-            g_cpu.delayedIMECounter = 0;
+            if (++g_cpu.delayedIMECounter == 2)
+            {
+                setIME();
+                resetDelayedIMELatch();
+                g_cpu.delayedIMECounter = 0;
+            }
         }
+
+        thisCycle.mCyclesExecuted += handleInterrupts();
+        if (g_cpu.haltModeCurrent == HALT_MODE_NORMAL)
+        {
+            // halted, but tick timers + periphs for 1 mcycle
+            handleTimers(4);
+            return thisCycle.mCyclesExecuted + 1;
+        }
+
+        if (g_cpu.haltModeCurrent == HALT_MODE_SKIP_NEXT_INSTRUCTION_PC)
+        {
+            g_cpu.haltModeCurrent = HALT_MODE_NONE;
+        }
+
+        if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && !g_cpu.isStopped)
+        {
+            // fetch-decode-execute
+            thisCycle.instruction = fetch8(g_cpu.registers.reg16.pc);
+            decodeAndExecute(&thisCycle);
+        }
+
+        handleTimers(thisCycle.mCyclesExecuted * 4);
+
+        if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && (g_cpu.haltModeCurrent != HALT_MODE_SKIP_NEXT_INSTRUCTION_PC) && !g_cpu.isStopped)
+        {
+            incrementProgramCounter(thisCycle.programCounterSteps);
+        }
+
+        if (g_cpu.haltRequested)
+        {
+            g_cpu.haltModeCurrent = g_cpu.haltModeRequest;
+            g_cpu.haltRequested = false;
+        }
+
+        if (g_cpu.stopRequested)
+        {
+            g_cpu.isStopped = true;
+            g_cpu.stopRequested = false;
+        }
+
+        retMcycles += thisCycle.mCyclesExecuted;
     }
 
-    thisCycle.mCyclesExecuted += handleInterrupts();
-    if (g_cpu.haltModeCurrent == HALT_MODE_NORMAL)
-    {
-        // halted, but tick timers + periphs for 1 mcycle
-        handleTimers(4);
-        return thisCycle.mCyclesExecuted + 1;
-    }
-
-    if (g_cpu.haltModeCurrent == HALT_MODE_SKIP_NEXT_INSTRUCTION_PC)
-    {
-        g_cpu.haltModeCurrent = HALT_MODE_NONE;
-    }
-
-    if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && !g_cpu.isStopped)
-    {
-        // fetch-decode-execute
-        thisCycle.instruction = fetch8(g_cpu.registers.reg16.pc);
-        decodeAndExecute(&thisCycle);
-    }
-
-    handleTimers(thisCycle.mCyclesExecuted * 4);
-
-    if ((g_cpu.haltModeCurrent != HALT_MODE_NORMAL) && (g_cpu.haltModeCurrent != HALT_MODE_SKIP_NEXT_INSTRUCTION_PC) && !g_cpu.isStopped)
-    {
-        incrementProgramCounter(thisCycle.programCounterSteps);
-    }
-
-    if (g_cpu.haltRequested)
-    {
-        g_cpu.haltModeCurrent = g_cpu.haltModeRequest;
-        g_cpu.haltRequested = false;
-    }
-
-    if (g_cpu.stopRequested)
-    {
-        g_cpu.isStopped = true;
-        g_cpu.stopRequested = false;
-    }
-
-    return thisCycle.mCyclesExecuted;
+    return retMcycles;
 }
 
 static size_t handleInterrupts(void)

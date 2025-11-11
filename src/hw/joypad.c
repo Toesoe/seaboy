@@ -114,7 +114,7 @@ void joypadShiftValuesToReg(uint8_t regValue, uint16_t addr)
 
     SAddressBus_t *pBus = pGetAddressBus();
 
-    if (regValue & 0x10)
+    if (regValue & 0x20)
     {
         pBus->map.ioregs.joypad.aRight = g_joypad.aRight;
         pBus->map.ioregs.joypad.bLeft = g_joypad.bLeft;
@@ -122,7 +122,7 @@ void joypadShiftValuesToReg(uint8_t regValue, uint16_t addr)
         pBus->map.ioregs.joypad.startDown = g_joypad.startDown;
         pBus->map.ioregs.joypad.dpadSelect = 1;
     }
-    else if (regValue & 0x20)
+    else if (regValue & 0x10)
     {
         pBus->map.ioregs.joypad.aRight = g_select.aRight;
         pBus->map.ioregs.joypad.bLeft = g_select.bLeft;

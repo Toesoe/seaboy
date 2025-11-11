@@ -157,6 +157,6 @@ bool checkStopped();
  * 
  * @return size_t mCycles consumed this iteration
  */
-size_t stepCPU();
+size_t stepCPU(size_t);
 
 #endif // !_CPU_H_

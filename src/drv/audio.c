@@ -18,6 +18,8 @@
 
 #include "audio.h"
 
+#include <math.h>
+
 #include "../hw/apu.h"
 
 static SDL_AudioDeviceID outputDev;
@@ -32,11 +34,11 @@ void initAudio()
     }
 
     SDL_AudioSpec desired, obtained;
-    desired.freq     = 22050;
+    desired.freq     = SDL_SAMPLE_RATE;
     desired.format   = AUDIO_S16SYS;
-    desired.channels = 1;
-    desired.samples  = 2048;
-    desired.callback = generateDownmixCallback;
+    desired.channels = 2;
+    desired.samples  = SDL_SAMPLE_COUNT;
+    desired.callback = nullptr;
     desired.userdata = nullptr;
 
     outputDev = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
@@ -47,5 +49,19 @@ void initAudio()
         fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
     }
 
+    int16_t prefill[1024];
+
+    for (int i = 0; i < 1024; i++)
+    {
+        prefill[i] = 0;
+    }
+
+    SDL_QueueAudio(outputDev, prefill, sizeof(prefill));
+
     SDL_PauseAudioDevice(outputDev, 0);
+}
+
+SDL_AudioDeviceID getAudioDevice()
+{
+    return outputDev;
 }

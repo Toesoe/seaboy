@@ -13,20 +13,17 @@ feature list:
   - all pass Blargg testing
 - ❕ interrupt behaviour
     - timing of EI is off
+- ✅ input handling
 - ❕ APU
     - as of now, both pulse channels and wave are implemented
-    - noise channel TODO
-    - output is rough, needs filtering
-    - playback is too slow. might be related to global system clocking
+    - noise channel TODO; not sure if it actually produces output :D
+    - output is rough, needs decoupling from CPU timebase + filtering
     - wavechannel keeps playing after it should be silent
 - ✅ PPU
 - ✅ full bus
 
 TODO:
-- ➡️ high CPU usage, probably due to SDL busywait
 - ❌ mapper support
-- ❌ joypad support
-    - SDL input handling is not my friend. how can something so easy be so hard? :)
 - ❌ GBC support
 - ❓ serial support
     - might not implement this
