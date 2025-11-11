@@ -258,6 +258,8 @@ void cartWriteHandler(uint16_t val, uint16_t addr)
         default:
             break;
     }
+
+    setNewRomBanks(g_cartridge.pCurrentRomBank0, g_cartridge.pCurrentRomBank1);
 }
 
 void writeCartRam8(uint8_t val, uint16_t addr)
@@ -316,7 +318,7 @@ static void handleMBC1(uint16_t val, uint16_t addr)
 
         g_cartridge.selectedRomBankNum = val;
         printf("selecting rombank %d\n", val);
-        g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE]);
+        g_cartridge.pCurrentRomBank1 = &g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE];
     }
     else if (addr < MBC1_ROM_BANK_NUM2_END)
     {
@@ -328,13 +330,13 @@ static void handleMBC1(uint16_t val, uint16_t addr)
         {
             printf("selecting rambank %d\n", val);
             g_cartridge.selectedRamBankNum = val;
-            g_cartridge.pCurrentRamBank = &(g_cartridge.pCartRam[val * ERAM_SIZE]);
+            g_cartridge.pCurrentRamBank = &g_cartridge.pCartRam[val * ERAM_SIZE];
         }
         else if (g_cartridge.advancedBankingModeEnabled)
         {
             g_cartridge.selectedRomBankNum &= (val << 4);
             printf("advanced rombank select %zu\n", g_cartridge.selectedRomBankNum);
-            g_cartridge.pCurrentRomBank1 = &(g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE]);
+            g_cartridge.pCurrentRomBank1 = &g_cartridge.pRom[g_cartridge.selectedRomBankNum * ROMN_SIZE];
         }
     }
     else if (addr < MBC1_BANKING_MODE_SELECT_END)

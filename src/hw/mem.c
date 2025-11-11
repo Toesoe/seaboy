@@ -112,6 +112,12 @@ void overrideBus(SAddressBus_t *pBus)
     memcpy(&g_bus, pBus, sizeof(SAddressBus_t));
 }
 
+void setNewRomBanks(uint8_t *pBank0, uint8_t *pBank1)
+{
+    g_bus.map.pRom0 = pBank0;
+    g_bus.map.pRom1 = pBank1;
+}
+
 const uint8_t fetch8(uint16_t addr)
 {
 

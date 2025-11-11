@@ -353,6 +353,7 @@ typedef union __attribute__((__packed__))
 void                 initializeBus(const SCartridge_t *, bool);
 void                 overrideBus(SAddressBus_t *);
 void                 mapRomIntoMem(uint8_t **, size_t);
+void                 setNewRomBanks(uint8_t *, uint8_t *);
 
 void                 registerAddressCallback(uint16_t, EAddressCallbackType_t, addressWriteCallback);
 

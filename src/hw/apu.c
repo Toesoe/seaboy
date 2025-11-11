@@ -445,7 +445,7 @@ static void tickNoiseChannel(size_t cycles)
 {
     g_currentAPUState.ch4.samplePeriod -= cycles;
 
-    if (g_currentAPUState.ch4.samplePeriod <= 0)
+    while (g_currentAPUState.ch4.samplePeriod <= 0)
     {
         g_currentAPUState.ch4.samplePeriod += (NOISE_TIMER_PERIOD(getNoiseDivisor()) << g_currentAPUState.ch4.pNR43->clockShift);
 
